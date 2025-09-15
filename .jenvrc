@@ -1,0 +1,3 @@
+# Java环境配置
+JAVA_HOME=${HOME}/.sdkman/candidates/java/current
+PATH=${JAVA_HOME}/bin:${PATH}
