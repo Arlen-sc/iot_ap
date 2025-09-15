@@ -84,8 +84,8 @@ public class TaskListService {
             }
 
             // 2. 重启TaskScheduler以重新加载所有任务
-            TaskScheduler.stop();
-            TaskScheduler.start();
+            TaskScheduler.getInstance().stop();
+            TaskScheduler.getInstance().start();
 
             logger.info("所有定时任务已成功开启");
         } catch (SQLException e) {
@@ -107,7 +107,7 @@ public class TaskListService {
             }
 
             // 2. 停止TaskScheduler
-            TaskScheduler.stop();
+            TaskScheduler.getInstance().stop();
 
             logger.info("所有定时任务已成功关闭");
         } catch (SQLException e) {

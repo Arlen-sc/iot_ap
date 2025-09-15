@@ -6,11 +6,11 @@ import com.iot.plc.model.Task;
 import com.iot.plc.scheduler.TaskScheduler;
 import com.iot.plc.service.AutoProcessService;
 import com.iot.plc.service.AutoControlService;
-import com.iot.plc.ui.JavaFXConfigPanel;
 import com.iot.plc.ui.JavaFXLogPanel;
 import com.iot.plc.ui.LogsManagementPanel;
 // import com.iot.plc.ui.JavaFXAutoProcessPanel;
 import com.iot.plc.ui.AutoProcessPanel;
+import com.iot.plc.ui.JavaFXConfigPanel;
 import com.iot.plc.service.TaskListService;
 import javafx.application.Application;
 import javafx.scene.Scene;
@@ -23,15 +23,15 @@ import java.sql.SQLException;
 import java.util.List;
 
 public class JavaFXMain extends Application {
-    private static JavaFXConfigPanel configPanel;
     private static TabPane tabbedPane;
 
-    public static void showConfigPanelForTask(int taskId) {
+    // 临时注释，因为JavaFXConfigPanel类已删除
+    /*public static void showConfigPanelForTask(int taskId) {
         // 在JavaFX中，我们直接切换到配置管理标签页
         if (tabbedPane != null) {
             tabbedPane.getSelectionModel().select(1); // 切换到配置管理标签页
         }
-    }
+    }*/
 
     @Override
     public void start(Stage primaryStage) {
@@ -48,11 +48,11 @@ public class JavaFXMain extends Application {
         }
 
         // 启动定时任务调度器
-        TaskScheduler.start();
+        TaskScheduler.getInstance().start();
 
         // 添加关闭钩子
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            TaskScheduler.stop();
+            TaskScheduler.getInstance().stop();
             System.out.println("应用程序已关闭");
         }));
 
@@ -71,14 +71,14 @@ public class JavaFXMain extends Application {
         VBox root = new VBox();
         tabbedPane = new TabPane();
 
-        // 任务列表界面
-        Tab taskListTab = new Tab("任务列表");
-        // 注意：这里不再创建UI面板，仅保留标签页以保持界面结构
-        taskListTab.setClosable(false);
+        // // 任务列表界面
+        // Tab taskListTab = new Tab("任务列表");
+        // // 注意：这里不再创建UI面板，仅保留标签页以保持界面结构
+        // taskListTab.setClosable(false);
 
-        // 配置界面
-        configPanel = new JavaFXConfigPanel();
-        Tab configTab = new Tab("配置管理", configPanel);
+        // 配置界面（临时注释，因为JavaFXConfigPanel类已删除）
+        JavaFXConfigPanel configPanel = new JavaFXConfigPanel();
+        Tab configTab = new Tab("配置管理",configPanel);
         configTab.setClosable(false);
 
         // 创建自动处理面板
@@ -97,7 +97,7 @@ public class JavaFXMain extends Application {
         logsManagementTab.setClosable(false);
 
         // 将标签页添加到标签面板 - 自动处理作为运行界面（第一个标签页）
-        tabbedPane.getTabs().addAll(autoProcessTab, taskListTab, configTab, logTab, logsManagementTab);
+        tabbedPane.getTabs().addAll(autoProcessTab,  configTab, logTab, logsManagementTab);
 
         // 将LogPanel实例传递给Logger
         Logger.getInstance().setLogPanel(logPanel);

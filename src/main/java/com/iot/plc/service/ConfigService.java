@@ -156,4 +156,13 @@ public class ConfigService {
         executorService.shutdown();
         logger.info("ConfigService 已关闭");
     }
+
+    public void saveConfigItem(String logRetentionPeriodKey, String defaultDays, String string) {
+        ConfigItem configItem = new ConfigItem();
+        configItem.setConfigKey(logRetentionPeriodKey);
+        configItem.setConfigValue(defaultDays);
+        // 假设第三个参数是数据类型，根据实际情况调整
+        configItem.setDataType(string);
+        this.saveConfigItem(configItem);
+    }
 }

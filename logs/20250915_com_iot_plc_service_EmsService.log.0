@@ -12,3 +12,5 @@
 警告: EMS API URL not configured
 九月 15, 2025 3:04:08 下午 com.iot.plc.service.EmsService sendProgramResult
 警告: EMS API URL not configured
+九月 15, 2025 10:15:47 下午 com.iot.plc.service.EmsService sendProgramResult
+警告: EMS API URL not configured

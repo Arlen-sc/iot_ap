@@ -1,11 +1,9 @@
 package com.iot.plc.logger;
 
 import com.iot.plc.ui.JavaFXLogPanel;
-import com.iot.plc.ui.LogPanel;
 
 public class Logger {
     private static Logger instance;
-    private LogPanel logPanel; // Swing版本的日志面板
     private JavaFXLogPanel javaFXLogPanel; // JavaFX版本的日志面板
     
     private Logger() {
@@ -19,11 +17,6 @@ public class Logger {
         return instance;
     }
     
-    // 支持Swing版本的LogPanel
-    public void setLogPanel(LogPanel panel) {
-        this.logPanel = panel;
-    }
-    
     // 支持JavaFX版本的JavaFXLogPanel
     public void setLogPanel(JavaFXLogPanel panel) {
         this.javaFXLogPanel = panel;
@@ -32,38 +25,25 @@ public class Logger {
     public void info(String message) {
         String logMessage = "[INFO] " + message;
         System.out.println(logMessage);
-        updateSwingLogPanel(logMessage);
         updateJavaFXLogPanel(logMessage);
     }
     
     public void error(String message) {
         String logMessage = "[ERROR] " + message;
         System.err.println(logMessage);
-        updateSwingLogPanel(logMessage);
         updateJavaFXLogPanel(logMessage);
     }
     
     public void debug(String message) {
         String logMessage = "[DEBUG] " + message;
         System.out.println(logMessage);
-        updateSwingLogPanel(logMessage);
         updateJavaFXLogPanel(logMessage);
     }
     
     public void warn(String message) {
         String logMessage = "[WARN] " + message;
         System.out.println(logMessage);
-        updateSwingLogPanel(logMessage);
         updateJavaFXLogPanel(logMessage);
-    }
-    
-    // 更新Swing版本的日志面板
-    private void updateSwingLogPanel(String message) {
-        if (logPanel != null) {
-            javax.swing.SwingUtilities.invokeLater(() -> {
-                logPanel.appendLog(message);
-            });
-        }
     }
     
     // 更新JavaFX版本的日志面板

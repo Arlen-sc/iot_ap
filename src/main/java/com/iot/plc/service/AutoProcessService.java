@@ -295,6 +295,10 @@ public class AutoProcessService {
         currentStatus = "空闲";
         expectedBarcodeCount = 0;
         currentBarcodes.clear();
+        // 调用clearBarcodes方法清空条码缓存
+        log("开始调用clearBarcodes方法，deviceId: " + deviceId);
+        clearBarcodes();
+        log("clearBarcodes方法调用完成");
         log("流程已重置");
     }
     

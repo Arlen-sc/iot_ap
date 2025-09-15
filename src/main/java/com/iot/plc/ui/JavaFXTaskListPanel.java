@@ -1,13 +1,10 @@
 package com.iot.plc.ui;
 
-import com.iot.plc.MainApp;
 import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.model.Task;
 import com.iot.plc.model.TaskDetail;
 import com.iot.plc.scheduler.TaskScheduler;
 import javafx.application.Platform;
-import javafx.beans.property.SimpleStringProperty;
-import javafx.beans.property.StringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
@@ -246,8 +243,8 @@ public class JavaFXTaskListPanel extends VBox {
                     }
 
                     // 2. 重启TaskScheduler以重新加载所有任务
-                    TaskScheduler.stop();
-                    TaskScheduler.start();
+                    TaskScheduler.getInstance().stop();
+                    TaskScheduler.getInstance().start();
 
                     // 3. 刷新表格显示
                     loadTasks();
@@ -276,7 +273,7 @@ public class JavaFXTaskListPanel extends VBox {
                     }
 
                     // 2. 停止TaskScheduler
-                    TaskScheduler.stop();
+                    TaskScheduler.getInstance().stop();
 
                     // 3. 刷新表格显示
                     loadTasks();

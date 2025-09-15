@@ -1,6 +1,7 @@
 package com.iot.plc.database;
 
 import com.iot.plc.model.*;
+import com.iot.plc.logger.LogManager;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -178,17 +179,9 @@ public class DatabaseManager {
         return tasks;
     }
     
+    // 修改savePlcData方法，通过LogManager调用
     public static void savePlcData(String deviceId, String jsonData) throws SQLException {
-        String sql = "INSERT INTO plc_data (device_id, data_json) VALUES (?, ?)";
-        
-        try (Connection conn = getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
-            pstmt.setString(1, deviceId);
-            pstmt.setString(2, jsonData);
-            
-            pstmt.executeUpdate();
-        }
+        LogManager.getInstance().savePlcData(deviceId, jsonData);
     }
     
     public static void deleteTask(int taskId) throws SQLException {
@@ -302,20 +295,9 @@ public class DatabaseManager {
         return task;
     }
     
-    // 条码数据相关操作
+    // 修改saveBarcodeData方法，通过LogManager调用
     public static void saveBarcodeData(String deviceId, String barcode, String portName) throws SQLException {
-        String sql = "INSERT INTO barcode_data (device_id, barcode, scan_time, port_name) VALUES (?, ?, ?, ?)";
-        
-        try (Connection conn = getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
-            pstmt.setString(1, deviceId);
-            pstmt.setString(2, barcode);
-            pstmt.setTimestamp(3, Timestamp.valueOf(LocalDateTime.now()));
-            pstmt.setString(4, portName);
-            
-            pstmt.executeUpdate();
-        }
+        LogManager.getInstance().saveBarcodeData(deviceId, barcode, portName);
     }
     
     public static List<BarcodeData> getAllBarcodes() throws SQLException {
@@ -338,39 +320,21 @@ public class DatabaseManager {
         return barcodes;
     }
     
-    // 验证结果相关操作
+    // 修改saveValidationResult方法，通过LogManager调用
     public static void saveValidationResult(boolean isValid, String message, int expectedCount, int actualCount) throws SQLException {
-        String sql = "INSERT INTO validation_result (is_valid, message, expected_count, actual_count) VALUES (?, ?, ?, ?)";
-        
-        try (Connection conn = getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
-            pstmt.setBoolean(1, isValid);
-            pstmt.setString(2, message);
-            pstmt.setInt(3, expectedCount);
-            pstmt.setInt(4, actualCount);
-            
-            pstmt.executeUpdate();
-        }
+        LogManager.getInstance().saveValidationResult(isValid, message, expectedCount, actualCount);
     }
     
-    // 烧录结果相关操作
+    // 修改saveProgramResult方法，通过LogManager调用
     public static void saveProgramResult(String batchId, String deviceId, String barcode, boolean result, String errorMessage, LocalDateTime programTime) throws SQLException {
-        String sql = "INSERT INTO program_result (batch_id, device_id, barcode, result, error_message, program_time) VALUES (?, ?, ?, ?, ?, ?)";
-        
-        try (Connection conn = getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
-            pstmt.setString(1, batchId);
-            pstmt.setString(2, deviceId);
-            pstmt.setString(3, barcode);
-            pstmt.setBoolean(4, result);
-            pstmt.setString(5, errorMessage);
-            pstmt.setTimestamp(6, Timestamp.valueOf(programTime));
-            
-            pstmt.executeUpdate();
-        }
+        LogManager.getInstance().saveProgramResult(batchId, deviceId, barcode, result, errorMessage, programTime);
     }
+    
+
+    
+
+    
+
     
     public static List<ProgramResult> getProgramResultsByBatchId(String batchId) throws SQLException {
         List<ProgramResult> results = new ArrayList<>();

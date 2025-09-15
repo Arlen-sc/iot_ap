@@ -722,8 +722,8 @@ public class TaskListPanel extends JPanel {
                 }
                 
                 // 2. 重启TaskScheduler以重新加载所有任务
-                TaskScheduler.stop();
-                TaskScheduler.start();
+                TaskScheduler.getInstance().stop();
+                TaskScheduler.getInstance().start();
                 
                 // 3. 刷新表格显示
                 loadTasks();
@@ -754,7 +754,7 @@ public class TaskListPanel extends JPanel {
                 }
                 
                 // 2. 停止TaskScheduler
-                TaskScheduler.stop();
+                TaskScheduler.getInstance().stop();
                 
                 // 3. 刷新表格显示
                 loadTasks();

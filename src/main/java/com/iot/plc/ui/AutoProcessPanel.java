@@ -21,9 +21,13 @@ import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.sql.SQLException;
 import java.util.UUID;
+import javafx.beans.binding.Bindings;
+import javafx.scene.layout.GridPane;
 
 import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.service.EmsService;
+import com.iot.plc.service.ConfigService;
+import com.iot.plc.model.ConfigItem;
 import com.iot.plc.model.ProgramResult;
 import com.iot.plc.model.DeviceResult;
 
@@ -47,8 +51,9 @@ public class AutoProcessPanel extends BorderPane {
     private StringProperty plcStatus = new SimpleStringProperty("未连接");
     private StringProperty upperComputerStatus = new SimpleStringProperty("未连接");
     private StringProperty emsStatus = new SimpleStringProperty("未连接");
-    private StringProperty expectedBarcodeCount = new SimpleStringProperty("0");
+    private StringProperty expectedBarcodeCount = new SimpleStringProperty("6");
     private StringProperty actualBarcodeCount = new SimpleStringProperty("0");
+    private static final String CONFIG_KEY_EXPECTED_BARCODE_COUNT = "expected_barcode_count";
     
     // 数据管理
     private ObservableList<BarcodeData> barcodeDataList = FXCollections.observableArrayList();
@@ -89,7 +94,99 @@ public class AutoProcessPanel extends BorderPane {
     public AutoProcessPanel() {
         initUI();
         startStatusUpdateThread();
+        loadExpectedBarcodeCountFromConfig();
         simulateConnections(); // 模拟连接状态
+    }
+    
+    /**
+     * 从配置服务加载预期条码数量
+     */
+    private void loadExpectedBarcodeCountFromConfig() {
+        try {
+            String configValue = ConfigService.getInstance().getConfigValueByKey(CONFIG_KEY_EXPECTED_BARCODE_COUNT);
+            if (configValue != null && !configValue.trim().isEmpty()) {
+                try {
+                    int count = Integer.parseInt(configValue.trim());
+                    if (count > 0) {
+                        expectedBarcodeCount.set(configValue);
+                        expectedBarcodeCountInput.setText(configValue);
+                        log("[配置加载] 从配置服务成功加载预期条码数量: " + configValue);
+                    } else {
+                        // 如果配置值无效（小于等于0），使用默认值并更新配置
+                        log("[配置检查] 配置服务中的预期条码数量值无效: " + configValue + ", 将使用默认值: " + expectedBarcodeCount.get());
+                        saveDefaultExpectedBarcodeCount();
+                    }
+                } catch (NumberFormatException e) {
+                    // 如果配置值格式错误，使用默认值并更新配置
+                    log("[配置检查] 配置服务中的预期条码数量格式错误: " + configValue + ", 将使用默认值: " + expectedBarcodeCount.get());
+                    saveDefaultExpectedBarcodeCount();
+                }
+            } else {
+                // 如果配置不存在，设置默认值并保存到配置服务
+                saveDefaultExpectedBarcodeCount();
+            }
+        } catch (Exception e) {
+            log("[配置加载错误] 从配置服务加载预期条码数量失败: " + e.getMessage());
+            // 如果加载失败，使用当前的默认值
+            saveDefaultExpectedBarcodeCount();
+        }
+    }
+    
+    /**
+     * 保存默认的预期条码数量到配置服务
+     */
+    private void saveDefaultExpectedBarcodeCount() {
+        try {
+            // 确保配置值有效
+            String configValue = expectedBarcodeCount.get().trim();
+            if (configValue.isEmpty()) {
+                configValue = "6"; // 使用默认值6
+            }
+            
+            // 先检查配置项是否已存在
+            String existingValue = ConfigService.getInstance().getConfigValueByKey(CONFIG_KEY_EXPECTED_BARCODE_COUNT);
+            ConfigItem configItem = null;
+            
+            if (existingValue != null) {
+                // 如果已存在，获取现有配置项
+                try {
+                    List<ConfigItem> allConfigs = DatabaseManager.getAllConfigItems();
+                    for (ConfigItem item : allConfigs) {
+                        if (item.getConfigKey().equals(CONFIG_KEY_EXPECTED_BARCODE_COUNT)) {
+                            configItem = item;
+                            configItem.setConfigValue(configValue); // 更新值
+                            break;
+                        }
+                    }
+                } catch (SQLException e) {
+                    // 如果获取现有配置项失败，创建新的配置项
+                    log("[配置检查] 获取现有配置项失败: " + e.getMessage() + ", 将创建新配置项");
+                    configItem = new ConfigItem(
+                        CONFIG_KEY_EXPECTED_BARCODE_COUNT,
+                        configValue,
+                        "自动处理流程中预期的条码数量",
+                        "INTEGER",
+                        false // 设置为非必填配置项
+                    );
+                }
+            } else {
+                // 如果不存在，创建新配置项
+                configItem = new ConfigItem(
+                    CONFIG_KEY_EXPECTED_BARCODE_COUNT,
+                    configValue,
+                    "自动处理流程中预期的条码数量",
+                    "INTEGER",
+                    false // 设置为非必填配置项
+                );
+            }
+            
+            ConfigService.getInstance().saveConfigItem(configItem);
+            log("[配置保存] 已保存默认预期条码数量到配置服务: " + configValue);
+        } catch (Exception e) {
+            log("[配置保存错误] 保存默认预期条码数量到配置服务失败: " + e.getMessage());
+            // 记录详细异常信息以便调试
+            e.printStackTrace();
+        }
     }
 
     private void initUI() {
@@ -159,6 +256,15 @@ public class AutoProcessPanel extends BorderPane {
         setPadding(new Insets(10));
     }
     
+    // 上位机配置相关常量
+    private static final String CONFIG_KEY_UPPER_COMPUTER_IP = "upper_computer_ip";
+    private static final String CONFIG_KEY_UPPER_COMPUTER_PORT = "upper_computer_port";
+    private static final String DEFAULT_UPPER_COMPUTER_IP = "127.0.0.1";
+    private static final String DEFAULT_UPPER_COMPUTER_PORT = "8080";
+    
+    // 上位机配置UI组件
+    private Button upperComputerConfigButton;
+    
     private VBox createStatusBox() {
         VBox statusBox = new VBox(5);
         statusBox.setPadding(new Insets(5));
@@ -177,6 +283,11 @@ public class AutoProcessPanel extends BorderPane {
                 new Label("EMS状态: "),
                 createStatusLabel(emsStatus)
         );
+        
+        // 添加上位机配置按钮
+        upperComputerConfigButton = new Button("编辑上位机配置");
+        upperComputerConfigButton.setOnAction(e -> showUpperComputerConfigDialog());
+        mainStatusBox.getChildren().add(upperComputerConfigButton);
         
         HBox barcodeCountBox = new HBox(20);
         expectedBarcodeCountInput = new TextField("6");
@@ -225,6 +336,52 @@ public class AutoProcessPanel extends BorderPane {
             if (count >= 0) {
                 expectedBarcodeCount.set(countText);
                 log("[操作结果] 已确认设置预期条码数量: " + count);
+                
+                // 将新的预期条码数量保存到配置服务
+                try {
+                    // 先检查配置项是否已存在
+                    String existingValue = ConfigService.getInstance().getConfigValueByKey(CONFIG_KEY_EXPECTED_BARCODE_COUNT);
+                    ConfigItem configItem = null;
+                    
+                    if (existingValue != null) {
+                        // 如果已存在，获取现有配置项
+                        try {
+                            List<ConfigItem> allConfigs = DatabaseManager.getAllConfigItems();
+                            for (ConfigItem item : allConfigs) {
+                                if (item.getConfigKey().equals(CONFIG_KEY_EXPECTED_BARCODE_COUNT)) {
+                                    configItem = item;
+                                    configItem.setConfigValue(countText); // 更新值
+                                    break;
+                                }
+                            }
+                        } catch (SQLException e) {
+                            // 如果获取现有配置项失败，创建新的配置项
+                            log("[配置检查] 获取现有配置项失败: " + e.getMessage() + ", 将创建新配置项");
+                            configItem = new ConfigItem(
+                                CONFIG_KEY_EXPECTED_BARCODE_COUNT,
+                                countText,
+                                "自动处理流程中预期的条码数量",
+                                "INTEGER",
+                                false // 设置为非必填配置项
+                            );
+                        }
+                    } else {
+                        // 如果不存在，创建新配置项
+                        configItem = new ConfigItem(
+                            CONFIG_KEY_EXPECTED_BARCODE_COUNT,
+                            countText,
+                            "自动处理流程中预期的条码数量",
+                            "INTEGER",
+                            false // 设置为非必填配置项
+                        );
+                    }
+                    
+                    ConfigService.getInstance().saveConfigItem(configItem);
+                    log("[配置更新] 已将预期条码数量更新到配置服务: " + countText);
+                } catch (Exception e) {
+                    log("[配置更新错误] 更新预期条码数量到配置服务失败: " + e.getMessage());
+                    e.printStackTrace();
+                }
             } else {
                 log("[操作结果] 无效输入：请输入非负整数作为预期条码数量");
                 expectedBarcodeCountInput.setText(expectedBarcodeCount.get());
@@ -359,6 +516,162 @@ public class AutoProcessPanel extends BorderPane {
         }).start();
     }
     
+    /**
+     * 显示上位机配置对话框
+     */
+    private void showUpperComputerConfigDialog() {
+        // 创建对话框
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("编辑上位机配置");
+        dialog.setHeaderText("请输入上位机的IP地址和端口号");
+        
+        // 设置对话框按钮
+        ButtonType saveButtonType = new ButtonType("保存", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+        
+        // 创建表单布局
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20, 150, 10, 10));
+        
+        // 创建输入字段
+        TextField ipTextField = new TextField();
+        TextField portTextField = new TextField();
+        
+        // 从配置服务加载现有配置
+        try {
+            String savedIp = ConfigService.getInstance().getConfigValueByKey(CONFIG_KEY_UPPER_COMPUTER_IP);
+            String savedPort = ConfigService.getInstance().getConfigValueByKey(CONFIG_KEY_UPPER_COMPUTER_PORT);
+            
+            ipTextField.setText(savedIp != null ? savedIp : DEFAULT_UPPER_COMPUTER_IP);
+            portTextField.setText(savedPort != null ? savedPort : DEFAULT_UPPER_COMPUTER_PORT);
+        } catch (Exception e) {
+            log("[配置加载错误] 从上位机配置服务加载配置失败: " + e.getMessage());
+            // 使用默认值
+            ipTextField.setText(DEFAULT_UPPER_COMPUTER_IP);
+            portTextField.setText(DEFAULT_UPPER_COMPUTER_PORT);
+        }
+        
+        // 添加标签和输入字段到网格
+        grid.add(new Label("IP地址:"), 0, 0);
+        grid.add(ipTextField, 1, 0);
+        grid.add(new Label("端口号:"), 0, 1);
+        grid.add(portTextField, 1, 1);
+        
+        // 设置对话框内容
+        dialog.getDialogPane().setContent(grid);
+        
+        // 验证输入
+        Button saveButton = (Button) dialog.getDialogPane().lookupButton(saveButtonType);
+        saveButton.disableProperty().bind(
+            Bindings.createBooleanBinding(() -> {
+                String ip = ipTextField.getText().trim();
+                String port = portTextField.getText().trim();
+                
+                // 简单的IP地址验证
+                boolean validIp = !ip.isEmpty() && ip.matches("^((25[0-5]|(2[0-4]|1\\d|[1-9]|)\\d)\\.?\\b){4}$");
+                // 简单的端口验证
+                boolean validPort = !port.isEmpty();
+                try {
+                    if (validPort) {
+                        int portNum = Integer.parseInt(port);
+                        validPort = portNum > 0 && portNum <= 65535;
+                    }
+                } catch (NumberFormatException e) {
+                    validPort = false;
+                }
+                
+                return !validIp || !validPort;
+            }, ipTextField.textProperty(), portTextField.textProperty())
+        );
+        
+        // 显示对话框并处理结果
+        dialog.showAndWait().ifPresent(result -> {
+            if (result == saveButtonType) {
+                String ip = ipTextField.getText().trim();
+                String port = portTextField.getText().trim();
+                
+                try {
+                    // 保存IP地址配置
+                    saveUpperComputerConfig(CONFIG_KEY_UPPER_COMPUTER_IP, ip, "上位机IP地址", "STRING");
+                    // 保存端口配置
+                    saveUpperComputerConfig(CONFIG_KEY_UPPER_COMPUTER_PORT, port, "上位机端口号", "INTEGER");
+                    
+                    log("[配置更新] 成功保存上位机配置 - IP: " + ip + ", 端口: " + port);
+                    showSuccessMessage("配置保存成功");
+                } catch (Exception e) {
+                    log("[配置保存错误] 保存上位机配置失败: " + e.getMessage());
+                    e.printStackTrace();
+                    showSuccessMessage("配置保存失败: " + e.getMessage());
+                }
+            }
+        });
+    }
+    
+    /**
+     * 保存上位机配置到配置服务
+     */
+    private void saveUpperComputerConfig(String configKey, String configValue, String description, String dataType) {
+        try {
+            // 先检查配置项是否已存在
+            String existingValue = ConfigService.getInstance().getConfigValueByKey(configKey);
+            ConfigItem configItem = null;
+            
+            if (existingValue != null) {
+                // 如果已存在，获取现有配置项
+                try {
+                    List<ConfigItem> allConfigs = DatabaseManager.getAllConfigItems();
+                    for (ConfigItem item : allConfigs) {
+                        if (item.getConfigKey().equals(configKey)) {
+                            configItem = item;
+                            configItem.setConfigValue(configValue); // 更新值
+                            break;
+                        }
+                    }
+                } catch (SQLException e) {
+                    // 如果获取现有配置项失败，创建新的配置项
+                    log("[配置检查] 获取现有配置项失败: " + e.getMessage() + ", 将创建新配置项");
+                    configItem = new ConfigItem(
+                        configKey,
+                        configValue,
+                        description,
+                        dataType,
+                        true // 设置为必填配置项
+                    );
+                }
+            } else {
+                // 如果不存在，创建新配置项
+                configItem = new ConfigItem(
+                    configKey,
+                    configValue,
+                    description,
+                    dataType,
+                    true // 设置为必填配置项
+                );
+            }
+            
+            ConfigService.getInstance().saveConfigItem(configItem);
+            log("[配置保存] 已保存上位机配置 - 键: " + configKey + ", 值: " + configValue);
+        } catch (Exception e) {
+            log("[配置保存错误] 保存上位机配置失败: " + e.getMessage());
+            throw new RuntimeException("保存上位机配置失败", e);
+        }
+    }
+    
+    /**
+     * 显示成功消息
+     */
+    private void showSuccessMessage(String message) {
+        Platform.runLater(() -> {
+            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.setTitle("成功");
+            alert.setHeaderText(null);
+            alert.setContentText(message);
+            alert.showAndWait();
+        });
+    }
+    
     private void simulateConnections() {
         // 模拟连接状态（1秒后全部连接）
         new Thread(() -> {
@@ -406,7 +719,8 @@ public class AutoProcessPanel extends BorderPane {
         processCompleted.set(false);
         currentStatus.set("运行中");
         // 保留预期条码数量不变
-        currentBarcodes.clear();
+        // 调用clearBarcodes方法清空所有条码数据
+        clearBarcodes();
         log("[操作结果] 流程已重置，保持运行状态");
         log("[流程状态] 当前流程状态：运行中，重置了所有流程标志");
     }
@@ -414,7 +728,7 @@ public class AutoProcessPanel extends BorderPane {
     private void clearBarcodes() {
         log("[操作] 用户点击了'清空条码'按钮");
         barcodeDataList.clear();
-        burnResultDataList.clear();
+        // burnResultDataList.clear();
         currentBarcodes.clear();
         log("[操作结果] 条码缓存已清空");
         log("[流程状态] 当前流程状态保持不变");
@@ -666,6 +980,9 @@ public class AutoProcessPanel extends BorderPane {
                             log("[流程完成] 警告: 流程执行完成，但部分条码烧录失败！");
                             log("[流程统计] 总共处理条码数量: " + currentBarcodes.size());
                         }
+                        // 重置流程
+                        resetProcess();
+                        
                     }
                 });
             } catch (InterruptedException e) {

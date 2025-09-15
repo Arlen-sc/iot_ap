@@ -2,114 +2,108 @@ package com.iot.plc.scheduler;
 
 import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.logger.Logger;
-import com.iot.plc.model.ConfigItem;
-import org.quartz.DisallowConcurrentExecution;
 import org.quartz.Job;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
-import java.util.List;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.Date;
 
-@DisallowConcurrentExecution
 public class LogCleanupJob implements Job {
     private static final String LOG_RETENTION_PERIOD_KEY = "log_retention_period";
-    private static final int DEFAULT_RETENTION_PERIOD = 0; // 默认不保留日志
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Override
-    public void execute(JobExecutionContext context) throws JobExecutionException {
-        // 支持手动调用时传入null上下文
-        Logger logger = Logger.getInstance();
-        logger.info("开始执行日志清理任务");
-
+    public void execute(JobExecutionContext jobExecutionContext) throws JobExecutionException {
+        Logger.getInstance().info("开始执行日志清理任务");
         try {
-            // 获取日志保留周期配置
-            int retentionWeeks = getLogRetentionPeriod();
-            logger.info("当前日志保留周期: " + retentionWeeks + " 周");
+            int retentionDays = getLogRetentionPeriod();
+            Logger.getInstance().info("当前日志清理周期: " + retentionDays + " 天");
 
-            // 如果保留周期为0，表示不保留日志，直接删除所有日志
-            if (retentionWeeks == 0) {
-                logger.info("日志保留周期为0，开始删除所有历史日志");
+            if (retentionDays == 0) {
+                // 不记录日志 - 清空所有日志
                 cleanupAllLogs();
-            } else {
-                // 计算保留截止日期
-                LocalDateTime cutoffDate = LocalDateTime.now().minus(retentionWeeks, ChronoUnit.WEEKS);
-                logger.info("开始清理 " + cutoffDate + " 之前的历史日志");
-                cleanupLogsBefore(cutoffDate);
+                Logger.getInstance().info("日志清理周期设置为0，已清空所有日志");
+            } else if (retentionDays > 0) {
+                // 按天数清理日志
+                LocalDateTime cutoffTime = LocalDateTime.now().minusDays(retentionDays);
+                cleanupLogsBefore(cutoffTime);
+                Logger.getInstance().info("已清理 " + retentionDays + " 天前的历史日志");
             }
-
-            logger.info("日志清理任务执行完成");
         } catch (Exception e) {
-            logger.error("日志清理任务执行失败: " + e.getMessage());
+            Logger.getInstance().error("执行日志清理任务失败: " + e.getMessage());
             throw new JobExecutionException("日志清理任务执行失败", e);
         }
+        Logger.getInstance().info("日志清理任务执行完成");
     }
 
     private int getLogRetentionPeriod() {
         try {
-            List<ConfigItem> configItems = DatabaseManager.getAllConfigItems();
-            for (ConfigItem item : configItems) {
-                if (LOG_RETENTION_PERIOD_KEY.equals(item.getConfigKey())) {
-                    try {
-                        return Integer.parseInt(item.getConfigValue());
-                    } catch (NumberFormatException e) {
-                        Logger.getInstance().error("日志保留周期配置值格式错误: " + item.getConfigValue());
-                        return DEFAULT_RETENTION_PERIOD;
-                    }
+            String sql = "SELECT config_value FROM config_items WHERE config_key = ?";
+            try (Connection conn = DatabaseManager.getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, LOG_RETENTION_PERIOD_KEY);
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    String value = rs.getString(1);
+                    return Integer.parseInt(value);
                 }
             }
-
-            // 如果配置不存在，创建默认配置
-            ConfigItem defaultConfig = new ConfigItem();
-            defaultConfig.setConfigKey(LOG_RETENTION_PERIOD_KEY);
-            defaultConfig.setConfigValue(String.valueOf(DEFAULT_RETENTION_PERIOD));
-            defaultConfig.setDescription("日志保留周期(单位:周)，0表示不保留日志");
-            defaultConfig.setDataType("integer");
-            defaultConfig.setRequired(false);
-            DatabaseManager.saveConfigItem(defaultConfig);
-
-            return DEFAULT_RETENTION_PERIOD;
         } catch (SQLException e) {
             Logger.getInstance().error("获取日志保留周期配置失败: " + e.getMessage());
-            return DEFAULT_RETENTION_PERIOD;
+        } catch (NumberFormatException e) {
+            Logger.getInstance().error("日志保留周期配置格式错误: " + e.getMessage());
         }
+        // 默认值：不清理日志（实际是不保留日志，因为0表示不记录日志）
+        return 0;
     }
 
     private void cleanupAllLogs() throws SQLException {
-        // 清理所有日志表
-        cleanupTable("plc_data");
+        // 清空条码数据日志
         cleanupTable("barcode_data");
-        cleanupTable("validation_result");
+        
+        // 清空程序执行结果日志
         cleanupTable("program_result");
+        
+        // 如果有其他日志表，也需要在这里添加对应的清理逻辑
+        Logger.getInstance().info("已清空所有日志表数据");
     }
 
-    private void cleanupLogsBefore(LocalDateTime cutoffDate) throws SQLException {
-        // 清理指定日期之前的日志
-        cleanupTableBefore("plc_data", "created_at", cutoffDate);
-        cleanupTableBefore("barcode_data", "scan_time", cutoffDate);
-        cleanupTableBefore("validation_result", "created_at", cutoffDate);
-        cleanupTableBefore("program_result", "program_time", cutoffDate);
+    private void cleanupLogsBefore(LocalDateTime cutoffTime) throws SQLException {
+        String cutoffDateStr = cutoffTime.format(DATE_FORMATTER);
+        
+        // 清理条码数据日志
+        cleanupTableBefore("barcode_data", "scan_time", cutoffDateStr);
+        
+        // 清理程序执行结果日志
+        cleanupTableBefore("program_result", "timestamp", cutoffDateStr);
+        
+        // 如果有其他日志表，也需要在这里添加对应的清理逻辑
+        Logger.getInstance().info("已清理所有早于 " + cutoffDateStr + " 的历史日志");
     }
 
     private void cleanupTable(String tableName) throws SQLException {
+        String sql = "DELETE FROM " + tableName;
         try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement("DELETE FROM " + tableName)) {
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             int deletedRows = pstmt.executeUpdate();
-            Logger.getInstance().info("清理表 " + tableName + "，删除了 " + deletedRows + " 条记录");
+            Logger.getInstance().info("从表 " + tableName + " 中删除了 " + deletedRows + " 条记录");
         }
     }
 
-    private void cleanupTableBefore(String tableName, String dateColumn, LocalDateTime cutoffDate) throws SQLException {
+    private void cleanupTableBefore(String tableName, String dateColumn, String cutoffDateStr) throws SQLException {
+        String sql = "DELETE FROM " + tableName + " WHERE " + dateColumn + " < ?";
         try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(
-                     "DELETE FROM " + tableName + " WHERE " + dateColumn + " < ?")) {
-            pstmt.setTimestamp(1, java.sql.Timestamp.valueOf(cutoffDate));
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, cutoffDateStr);
             int deletedRows = pstmt.executeUpdate();
-            Logger.getInstance().info("清理表 " + tableName + " 中 " + cutoffDate + " 之前的记录，删除了 " + deletedRows + " 条记录");
+            Logger.getInstance().info("从表 " + tableName + " 中删除了 " + deletedRows + " 条历史记录");
         }
     }
 }
