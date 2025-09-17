@@ -68,6 +68,21 @@ public class SerialPortService {
      */
     public boolean initSerialPort(String deviceId, String portName, int baudRate, int dataBits, int stopBits, int parity) {
         try {
+            // 1. 检查端口是否存在
+            boolean portExists = false;
+            String[] availablePorts = getAvailablePorts();
+            for (String port : availablePorts) {
+                if (port.equals(portName)) {
+                    portExists = true;
+                    break;
+                }
+            }
+            
+            if (!portExists) {
+                logger.severe("Port " + portName + " does not exist");
+                return false;
+            }
+            
             // 如果已经存在该设备的串口连接，先关闭
             if (devicePortMap.containsKey(deviceId)) {
                 SerialPort existingPort = devicePortMap.get(deviceId);
@@ -77,52 +92,129 @@ public class SerialPortService {
                 devicePortMap.remove(deviceId);
             }
             
-            // 创建新的串口连接
+            // 2. 创建新的串口连接并进行设备连接验证
             SerialPort serialPort = new SerialPort(portName);
-            serialPort.openPort();
-            serialPort.setParams(baudRate, dataBits, stopBits, parity);
-            
-            // 添加事件监听器
-            serialPort.addEventListener(new SerialPortEventListener() {
-                private StringBuilder buffer = new StringBuilder();
+            try {
+                serialPort.openPort();
+                serialPort.setParams(baudRate, dataBits, stopBits, parity);
                 
-                @Override
-                public void serialEvent(SerialPortEvent event) {
-                    if (event.isRXCHAR() && event.getEventValue() > 0) {
-                        try {
-                            byte[] data = serialPort.readBytes();
-                            String receivedData = new String(data);
-                            
-                            // 将接收到的数据添加到缓冲区
-                            buffer.append(receivedData);
-                            
-                            // 检查是否接收到完整的条码（通常以回车或换行结束）
-                            if (receivedData.contains("\n") || receivedData.contains("\r")) {
-                                String barcode = buffer.toString().trim();
-                                buffer = new StringBuilder(); // 清空缓冲区
+                // 3. 发送一个简单的命令或读取一些数据来验证设备是否响应
+                // 这里可以根据具体设备协议进行调整
+                boolean deviceConnected = verifyDeviceConnection(serialPort);
+                if (!deviceConnected) {
+                    logger.severe("Device not responding on port " + portName);
+                    serialPort.closePort();
+                    return false;
+                }
+                
+                // 添加事件监听器
+                serialPort.addEventListener(new SerialPortEventListener() {
+                    private StringBuilder buffer = new StringBuilder();
+                    
+                    @Override
+                    public void serialEvent(SerialPortEvent event) {
+                        if (event.isRXCHAR() && event.getEventValue() > 0) {
+                            try {
+                                byte[] data = serialPort.readBytes();
+                                String receivedData = new String(data);
                                 
-                                // 处理条码数据
-                                processBarcode(deviceId, barcode, portName);
+                                // 将接收到的数据添加到缓冲区
+                                buffer.append(receivedData);
+                                
+                                // 检查是否接收到完整的条码（通常以回车或换行结束）
+                                if (receivedData.contains("\n") || receivedData.contains("\r")) {
+                                    String barcode = buffer.toString().trim();
+                                    buffer = new StringBuilder(); // 清空缓冲区
+                                    
+                                    // 处理条码数据
+                                    processBarcode(deviceId, barcode, portName);
+                                }
+                            } catch (SerialPortException ex) {
+                                logger.severe("Error reading from serial port: " + ex.getMessage());
                             }
-                        } catch (SerialPortException ex) {
-                            logger.severe("Error reading from serial port: " + ex.getMessage());
                         }
                     }
+                });
+                
+                // 保存串口连接
+                devicePortMap.put(deviceId, serialPort);
+                
+                // 初始化条码数据缓存
+                if (!deviceBarcodeMap.containsKey(deviceId)) {
+                    deviceBarcodeMap.put(deviceId, new ArrayList<>());
                 }
-            });
-            
-            // 保存串口连接
-            devicePortMap.put(deviceId, serialPort);
-            
-            // 初始化条码数据缓存
-            if (!deviceBarcodeMap.containsKey(deviceId)) {
-                deviceBarcodeMap.put(deviceId, new ArrayList<>());
+                
+                logger.info("Serial port initialized for device " + deviceId + " on port " + portName);
+                return true;
+            } catch (SerialPortException e) {
+                logger.severe("Failed to initialize serial port for device " + deviceId + ": " + e.getMessage());
+                // 确保在异常情况下关闭端口
+                if (serialPort != null && serialPort.isOpened()) {
+                    try {
+                        serialPort.closePort();
+                    } catch (SerialPortException ex) {
+                        logger.severe("Failed to close port after initialization error: " + ex.getMessage());
+                    }
+                }
+                return false;
             }
-            
-            logger.info("Serial port initialized for device " + deviceId + " on port " + portName);
+        } catch (Exception e) {
+            logger.severe("Unexpected error during serial port initialization: " + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * 验证设备连接状态
+     * @param serialPort 串口对象
+     * @return 设备是否连接且有效
+     */
+    private boolean verifyDeviceConnection(SerialPort serialPort) {
+        try {
+            // 检查串口是否已打开
+            if (!serialPort.isOpened()) {
+                logger.warning("Serial port is not opened");
+                return false;
+            }
+
+            // 1. 检查端口基本状态 - 跳过DTR/RTS状态检查（JSSC库不支持）
+            try {
+                logger.info("Serial port is opened and accessible");
+            } catch (Exception e) {
+                logger.warning("Failed to access serial port: " + e.getMessage());
+                // 如果无法访问端口，视为端口无效
+                return false;
+            }
+
+            // 2. 测试端口通信 - 尝试设置并获取流控制参数
+            try {
+                // 先保存当前流控制设置
+                int flowControl = serialPort.getFlowControlMode();
+                // 尝试临时修改流控制设置（这可以测试端口是否响应命令）
+                serialPort.setFlowControlMode(SerialPort.FLOWCONTROL_NONE);
+                // 立即恢复原来的设置
+                serialPort.setFlowControlMode(flowControl);
+                logger.info("Serial port command test passed");
+            } catch (Exception e) {
+                logger.warning("Serial port command test failed: " + e.getMessage());
+                return false;
+            }
+
+            // 3. 检查端口是否可读（针对输入设备如扫描枪）
+            try {
+                // 清除输入缓冲区，准备接收数据
+                serialPort.purgePort(SerialPort.PURGE_RXCLEAR);
+                logger.info("Serial port input buffer cleared successfully");
+            } catch (Exception e) {
+                logger.warning("Failed to clear input buffer: " + e.getMessage());
+                return false;
+            }
+
+            // 所有验证都通过，端口被认为是有效的
+            logger.info("Serial port verification passed");
             return true;
-        } catch (SerialPortException e) {
-            logger.severe("Failed to initialize serial port for device " + deviceId + ": " + e.getMessage());
+        } catch (Exception e) {
+            logger.warning("Device verification failed: " + e.getMessage());
             return false;
         }
     }

@@ -4,13 +4,10 @@ import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.logger.Logger;
 import com.iot.plc.model.Task;
 import com.iot.plc.scheduler.TaskScheduler;
-import com.iot.plc.service.AutoProcessService;
-import com.iot.plc.service.AutoControlService;
 import com.iot.plc.ui.JavaFXLogPanel;
 import com.iot.plc.ui.LogsManagementPanel;
-// import com.iot.plc.ui.JavaFXAutoProcessPanel;
-import com.iot.plc.ui.AutoProcessPanel;
 import com.iot.plc.ui.JavaFXConfigPanel;
+import com.iot.plc.ui.AutoProcessPanel;
 import com.iot.plc.service.TaskListService;
 import javafx.application.Application;
 import javafx.scene.Scene;
@@ -64,7 +61,7 @@ public class JavaFXMain extends Application {
         // Logger.getInstance().info("自动控制服务已初始化");
 
         // 初始化任务列表服务（不依赖Netty）
-        TaskListService taskListService = TaskListService.getInstance();
+        TaskListService.getInstance();
         Logger.getInstance().info("任务列表服务已初始化");
 
         // 创建主布局
@@ -81,10 +78,10 @@ public class JavaFXMain extends Application {
         Tab configTab = new Tab("配置管理",configPanel);
         configTab.setClosable(false);
 
-        // 创建自动处理面板
-        AutoProcessPanel autoProcessPanel = new AutoProcessPanel();
-        Tab autoProcessTab = new Tab("自动处理", autoProcessPanel);
-        autoProcessTab.setClosable(false);
+        // 创建自动控制面板（使用SwingNode包装Swing组件）
+        AutoProcessPanel autoControlPanel = new AutoProcessPanel();
+        Tab autoControlTab = new Tab("自动控制", autoControlPanel);
+        autoControlTab.setClosable(false);
         
         // 运行日志界面
         JavaFXLogPanel logPanel = new JavaFXLogPanel();
@@ -96,8 +93,8 @@ public class JavaFXMain extends Application {
         Tab logsManagementTab = new Tab("日志管理", logsManagementPanel);
         logsManagementTab.setClosable(false);
 
-        // 将标签页添加到标签面板 - 自动处理作为运行界面（第一个标签页）
-        tabbedPane.getTabs().addAll(autoProcessTab,  configTab, logTab, logsManagementTab);
+        // 将标签页添加到标签面板 - 自动控制作为运行界面（第一个标签页）
+        tabbedPane.getTabs().addAll(autoControlTab,  configTab, logTab, logsManagementTab);
 
         // 将LogPanel实例传递给Logger
         Logger.getInstance().setLogPanel(logPanel);

@@ -15,7 +15,7 @@ if not exist "%JAVA_HOME%\bin\java.exe" (
 
 echo Starting application...
 cd /D "%SCRIPT_DIR%"
-"%JAVA_HOME%\bin\java" -cp "target\classes;lib\*" com.iot.plc.MainApp
+"%JAVA_HOME%\bin\java" -cp "target\classes;lib\*" com.iot.plc.JavaFXMain
 if errorlevel 1 (
     echo Application failed with error %errorlevel%
     echo Possible reasons:

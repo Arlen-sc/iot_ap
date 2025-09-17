@@ -65,19 +65,22 @@ public class PlcService {
     // EMS服务
     private EmsService emsService;
     
+    // 配置键常量定义
+    private static final String CONFIG_KEY_PLC_IP = "plc.default.ip";
+    private static final String CONFIG_KEY_PLC_PORT = "plc.default.port";
+    private static final String CONFIG_KEY_CONNECTION_TIMEOUT = "connection.timeout";
+    private static final String CONFIG_KEY_READ_TIMEOUT = "read.timeout";
+    
+    // 配置默认值
+    private static final String DEFAULT_PLC_IP = "127.0.0.1";
+    private static final int DEFAULT_PLC_PORT = 502;
+    private static final int DEFAULT_CONNECTION_TIMEOUT = 5000;
+    private static final int DEFAULT_READ_TIMEOUT = 3000;
+    
     // 私有构造函数
     private PlcService() {
-        // 从配置文件读取默认值
-        Properties prop = new Properties();
-        try {
-            prop.load(getClass().getClassLoader().getResourceAsStream("config.properties"));
-            this.plcHost = prop.getProperty("plc.default.ip", "192.168.1.100");
-            this.plcPort = Integer.parseInt(prop.getProperty("plc.default.port", "502"));
-        } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "加载配置文件失败: " + e.getMessage(), e);
-            this.plcHost = "192.168.1.100";
-            this.plcPort = 502;
-        }
+        // 从配置管理系统获取PLC配置
+        loadConfigFromConfigService();
         
         // 初始化服务
         this.serialPortService = SerialPortService.getInstance();
@@ -87,6 +90,68 @@ public class PlcService {
         // 创建线程池
         this.executorService = Executors.newFixedThreadPool(8);
         this.scheduledExecutorService = Executors.newScheduledThreadPool(4);
+    }
+    
+    /**
+     * 从配置管理系统加载PLC相关配置
+     */
+    private void loadConfigFromConfigService() {
+        try {
+            ConfigService configService = ConfigService.getInstance();
+            
+            // 获取PLC IP配置
+            String plcIp = configService.getConfigValueByKey(CONFIG_KEY_PLC_IP);
+            if (plcIp == null || plcIp.trim().isEmpty()) {
+                // 如果配置不存在，创建新配置项
+                createDefaultConfigItem(CONFIG_KEY_PLC_IP, DEFAULT_PLC_IP, "PLC设备默认IP地址", "STRING");
+                plcIp = DEFAULT_PLC_IP;
+            }
+            this.plcHost = plcIp;
+            
+            // 获取PLC端口配置
+            String plcPortStr = configService.getConfigValueByKey(CONFIG_KEY_PLC_PORT);
+            if (plcPortStr == null || plcPortStr.trim().isEmpty()) {
+                // 如果配置不存在，创建新配置项
+                createDefaultConfigItem(CONFIG_KEY_PLC_PORT, String.valueOf(DEFAULT_PLC_PORT), "PLC设备默认端口号", "INTEGER");
+                this.plcPort = DEFAULT_PLC_PORT;
+            } else {
+                try {
+                    this.plcPort = Integer.parseInt(plcPortStr);
+                } catch (NumberFormatException e) {
+                    LOGGER.log(Level.WARNING, "PLC端口配置格式错误，使用默认值: {}", e.getMessage());
+                    this.plcPort = DEFAULT_PLC_PORT;
+                }
+            }
+            
+            // 记录配置加载结果
+            LOGGER.info(String.format("成功从配置管理系统加载PLC配置: IP=%s, 端口=%d", this.plcHost, this.plcPort));
+            
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "从配置管理系统加载PLC配置失败: {}", e.getMessage());
+            // 使用默认值
+            this.plcHost = DEFAULT_PLC_IP;
+            this.plcPort = DEFAULT_PLC_PORT;
+        }
+    }
+    
+    /**
+     * 创建默认配置项
+     */
+    private void createDefaultConfigItem(String configKey, String configValue, String description, String dataType) {
+        try {
+            ConfigService configService = ConfigService.getInstance();
+            ConfigItem configItem = new ConfigItem(
+                configKey,
+                configValue,
+                description,
+                dataType,
+                false // 设置为非必填配置项
+            );
+            configService.saveConfigItem(configItem);
+            LOGGER.info(String.format("已创建默认配置项: %s", configKey));
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "创建默认配置项失败: {}", e.getMessage());
+        }
     }
     
     // 获取单例实例
