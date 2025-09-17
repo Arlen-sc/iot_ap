@@ -3,7 +3,7 @@ package com.iot.plc.ui;
 import com.iot.plc.service.NetworkService;
 import com.iot.plc.service.ConfigService;
 import com.iot.plc.model.ConfigItem;
-import com.iot.plc.logger.LoggerFactory;
+import com.iot.plc.logger.Logger;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -13,14 +13,14 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
-import java.util.logging.Logger;
 
 /**
  * 网络接收模块配置面板
  * 用于配置TCP服务端、TCP客户端和UDP协议参数
  */
-public class NetworkConfigPanel {
-    private static final Logger logger = LoggerFactory.getLogger(NetworkConfigPanel.class.getName());
+public class NetworkConfigPanel extends VBox {
+    // 使用我们统一的Logger类
+    private static final Logger logger = Logger.getInstance();
     private Stage stage;
     private NetworkService.Config config;
     
@@ -201,7 +201,7 @@ public class NetworkConfigPanel {
             showError("端口号必须是数字");
         } catch (Exception e) {
             showError("保存配置失败：" + e.getMessage());
-            logger.severe("Failed to save network configuration: " + e.getMessage());
+            logger.error("Failed to save network configuration: " + e.getMessage());
         }
     }
     
@@ -255,7 +255,7 @@ public class NetworkConfigPanel {
             
             logger.info("网络配置已保存到配置管理系统");
         } catch (Exception e) {
-            logger.severe("保存配置到配置管理系统失败: " + e.getMessage());
+            logger.error("保存配置到配置管理系统失败: " + e.getMessage());
         }
     }
     
@@ -277,7 +277,7 @@ public class NetworkConfigPanel {
                 }
             }
         } catch (Exception e) {
-            logger.warning("Failed to load network configuration: " + e.getMessage());
+            logger.warn("Failed to load network configuration: " + e.getMessage());
         }
     }
     
@@ -329,7 +329,7 @@ public class NetworkConfigPanel {
             logger.info("从配置管理系统加载网络配置成功");
             return true;
         } catch (Exception e) {
-            logger.warning("从配置管理系统加载网络配置失败: " + e.getMessage());
+            logger.warn("从配置管理系统加载网络配置失败: " + e.getMessage());
             return false;
         }
     }

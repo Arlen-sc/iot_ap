@@ -1,7 +1,6 @@
 package com.iot.plc.test;
 
 import com.iot.plc.service.SerialPortService;
-import jssc.SerialPortException;
 import java.util.Scanner;
 
 /**
@@ -35,6 +34,7 @@ public class SerialPortTest {
         
         if (choice < 1 || choice > availablePorts.length) {
             System.out.println("无效的选择");
+            scanner.close();
             return;
         }
         

@@ -2,25 +2,19 @@ package com.iot.plc.service;
 
 import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.model.*;
-import com.iot.plc.logger.LoggerFactory;
+import com.iot.plc.logger.Logger;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 
 import java.io.IOException;
 import java.net.Socket;
 import java.sql.SQLException;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.function.BiConsumer;
 
 /**
@@ -28,7 +22,7 @@ import java.util.function.BiConsumer;
  * 负责与PLC设备、上位机和EMS系统进行通信，实现整体工作流程
  */
 public class PlcService {
-    private static final Logger LOGGER = LoggerFactory.getLogger(PlcService.class.getName());
+    private static final Logger logger = Logger.getInstance();
     private static final Gson gson = new GsonBuilder().setDateFormat("yyyy-MM-dd HH:mm:ss").create();
     private static final int RECONNECT_DELAY = 5000; // 重连延迟时间(毫秒)
     
@@ -68,14 +62,14 @@ public class PlcService {
     // 配置键常量定义
     private static final String CONFIG_KEY_PLC_IP = "plc.default.ip";
     private static final String CONFIG_KEY_PLC_PORT = "plc.default.port";
-    private static final String CONFIG_KEY_CONNECTION_TIMEOUT = "connection.timeout";
-    private static final String CONFIG_KEY_READ_TIMEOUT = "read.timeout";
+    // private static final String CONFIG_KEY_CONNECTION_TIMEOUT = "connection.timeout";
+    // private static final String CONFIG_KEY_READ_TIMEOUT = "read.timeout";
     
     // 配置默认值
     private static final String DEFAULT_PLC_IP = "127.0.0.1";
     private static final int DEFAULT_PLC_PORT = 502;
-    private static final int DEFAULT_CONNECTION_TIMEOUT = 5000;
-    private static final int DEFAULT_READ_TIMEOUT = 3000;
+    // private static final int DEFAULT_CONNECTION_TIMEOUT = 5000;
+    // private static final int DEFAULT_READ_TIMEOUT = 3000;
     
     // 私有构造函数
     private PlcService() {
@@ -118,16 +112,16 @@ public class PlcService {
                 try {
                     this.plcPort = Integer.parseInt(plcPortStr);
                 } catch (NumberFormatException e) {
-                    LOGGER.log(Level.WARNING, "PLC端口配置格式错误，使用默认值: {}", e.getMessage());
+                    logger.warn("PLC端口配置格式错误，使用默认值: " + e.getMessage());
                     this.plcPort = DEFAULT_PLC_PORT;
                 }
             }
             
             // 记录配置加载结果
-            LOGGER.info(String.format("成功从配置管理系统加载PLC配置: IP=%s, 端口=%d", this.plcHost, this.plcPort));
+            logger.info("成功从配置管理系统加载PLC配置: IP=" + this.plcHost + ", 端口=" + this.plcPort);
             
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "从配置管理系统加载PLC配置失败: {}", e.getMessage());
+            logger.error("从配置管理系统加载PLC配置失败: " + e.getMessage());
             // 使用默认值
             this.plcHost = DEFAULT_PLC_IP;
             this.plcPort = DEFAULT_PLC_PORT;
@@ -148,9 +142,9 @@ public class PlcService {
                 false // 设置为非必填配置项
             );
             configService.saveConfigItem(configItem);
-            LOGGER.info(String.format("已创建默认配置项: %s", configKey));
+            logger.info("已创建默认配置项: " + configKey);
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "创建默认配置项失败: {}", e.getMessage());
+            logger.warn("创建默认配置项失败: " + e.getMessage());
         }
     }
     
@@ -225,10 +219,10 @@ public class PlcService {
             plcSocket = new Socket(plcHost, plcPort);
             plcSocket.setSoTimeout(5000);
             isPlcConnected.set(true);
-            LOGGER.info("成功连接到PLC设备: " + plcHost + ":" + plcPort);
+            logger.info("成功连接到PLC设备: " + plcHost + ":" + plcPort);
             return true;
         } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "连接PLC设备失败: " + e.getMessage(), e);
+            logger.error("连接PLC设备失败: " + e.getMessage(), e);
             scheduleReconnectPLC();
             return false;
         }
@@ -240,7 +234,7 @@ public class PlcService {
     private void scheduleReconnectPLC() {
         if (!isPlcConnected.get()) {
             scheduledExecutorService.schedule(() -> {
-                LOGGER.info("尝试重新连接到PLC设备...");
+                logger.info("尝试重新连接到PLC设备...");
                 connectToPLC();
                 if (isPlcConnected.get()) {
                     startPlcListener();
@@ -258,7 +252,7 @@ public class PlcService {
                 plcSocket.close();
             }
         } catch (IOException e) {
-            LOGGER.log(Level.WARNING, "关闭PLC连接时发生错误: " + e.getMessage(), e);
+            logger.warn("关闭PLC连接时发生错误: " + e.getMessage());
         }
         
         // 关闭上位机连接
@@ -294,16 +288,16 @@ public class PlcService {
                             handlePlcMessage(message);
                         }
                     } catch (IOException e) {
-                        LOGGER.log(Level.SEVERE, "读取PLC消息时发生错误: " + e.getMessage(), e);
+                        logger.error("读取PLC消息时发生错误: " + e.getMessage(), e);
                         isPlcConnected.set(false);
                         scheduleReconnectPLC();
                         break;
                     }
                 }
             } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "PLC监听线程异常: " + e.getMessage(), e);
-                isPlcConnected.set(false);
-                scheduleReconnectPLC();
+                logger.error("PLC监听线程异常: " + e.getMessage(), e);
+            isPlcConnected.set(false);
+            scheduleReconnectPLC();
             }
         });
     }
@@ -314,7 +308,7 @@ public class PlcService {
      */
     private void handlePlcMessage(String message) {
         try {
-            LOGGER.info("收到PLC消息: " + message);
+            logger.info("收到PLC消息: " + message);
             
             // 解析消息
             JsonObject jsonObject = JsonParser.parseString(message).getAsJsonObject();
@@ -332,7 +326,7 @@ public class PlcService {
                 ProductCountData productCountData = new ProductCountData(count, batchId);
                 productCountQueue.offer(productCountData);
                 
-                LOGGER.info("收到产品数量数据: " + productCountData);
+                logger.info("收到产品数量数据: " + productCountData);
                 
                 // 验证条码数量与产品数量是否匹配
                 validateBarcodeCount(productCountData);
@@ -341,18 +335,18 @@ public class PlcService {
                 try {
                     DatabaseManager.savePlcData(batchId, message);
                 } catch (SQLException e) {
-                    LOGGER.log(Level.WARNING, "保存PLC数据到数据库失败: " + e.getMessage(), e);
+                    logger.warn("保存PLC数据到数据库失败: " + e.getMessage());
                 }
             } else if ("start_command".equals(type)) {
                 // 处理开始指令
-                LOGGER.info("收到开始指令");
+                logger.info("收到开始指令");
                 startCommandLatch.countDown();
                 
                 // 收到开始指令后，发送烧录指令给上位机
                 sendProgramCommand();
             }
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "处理PLC消息时发生错误: " + e.getMessage(), e);
+            logger.error("处理PLC消息时发生错误: " + e.getMessage(), e);
         }
     }
     
@@ -380,7 +374,7 @@ public class PlcService {
      */
     public boolean sendValidationResult(ValidationResult result) {
         if (!isPlcConnected.get() || plcSocket == null || plcSocket.isClosed()) {
-            LOGGER.warning("无法发送验证结果: 未连接到PLC设备");
+            logger.warn("无法发送验证结果: 未连接到PLC设备");
             return false;
         }
         
@@ -402,19 +396,19 @@ public class PlcService {
             plcSocket.getOutputStream().write(jsonResponse.getBytes());
             plcSocket.getOutputStream().flush();
             
-            LOGGER.info("验证结果已发送: " + jsonResponse);
+            logger.info("验证结果已发送: " + jsonResponse);
             
             try {
                 // 保存到数据库
                 DatabaseManager.saveValidationResult(result.isValid(), result.getMessage(), 
                         result.getExpectedCount(), result.getActualCount());
             } catch (SQLException e) {
-                LOGGER.log(Level.WARNING, "保存验证结果到数据库失败: " + e.getMessage(), e);
+                logger.warn("保存验证结果到数据库失败: " + e.getMessage());
             }
             
             return true;
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "发送验证结果时发生错误: " + e.getMessage(), e);
+            logger.error("发送验证结果时发生错误: " + e.getMessage(), e);
             return false;
         }
     }
@@ -437,7 +431,7 @@ public class PlcService {
             upperComputerService.sendProgramCommand(deviceId, barcodes);
             return true;
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "发送烧录指令时发生错误: " + e.getMessage(), e);
+            logger.error("发送烧录指令时发生错误: " + e.getMessage(), e);
             return false;
         }
     }
@@ -485,13 +479,13 @@ public class PlcService {
         barcodeCache.put(deviceId, barcodeData);
         barcodeCount.incrementAndGet();
         
-        LOGGER.info("添加条码数据: " + barcodeData);
+        logger.info("添加条码数据: " + barcodeData);
         
         try {
             // 保存到数据库
             DatabaseManager.saveBarcodeData(deviceId, barcode, portName);
         } catch (SQLException e) {
-            LOGGER.log(Level.WARNING, "保存条码数据到数据库失败: " + e.getMessage(), e);
+            logger.warn("保存条码数据到数据库失败: " + e.getMessage());
         }
     }
     
@@ -509,7 +503,7 @@ public class PlcService {
     public void clearBarcodeCache() {
         barcodeCache.clear();
         barcodeCount.set(0);
-        LOGGER.info("条码缓存已清空");
+        logger.info("条码缓存已清空");
     }
     
     /**
@@ -610,7 +604,7 @@ public class PlcService {
             parsedData.addProperty("timestamp", System.currentTimeMillis());
             return gson.toJson(parsedData);
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "解析数据失败: " + e.getMessage(), e);
+            logger.error("解析数据失败: " + e.getMessage(), e);
             return "解析失败: " + e.getMessage();
         }
     }
@@ -655,6 +649,8 @@ public class PlcService {
      * 获取EMS服务连接状态
      * @return 连接状态字符串
      */
+    
+
     public String getEmsConnectionStatus() {
         return emsService != null ? "{\"status\":\"connected\"}" : "{\"status\":\"disconnected\"}";
     }
@@ -719,7 +715,7 @@ public class PlcService {
             try {
                 listener.accept(messageType, message);
             } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "Error notifying PLC message listener: " + e.getMessage(), e);
+                logger.error("Error notifying PLC message listener: " + e.getMessage(), e);
             }
         }
     }

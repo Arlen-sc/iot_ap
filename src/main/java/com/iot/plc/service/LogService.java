@@ -1,8 +1,6 @@
 package com.iot.plc.service;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import com.iot.plc.logger.Logger;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -12,7 +10,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * 负责系统日志的记录、存储和分发
  */
 public class LogService {
-    private static final Logger logger = LoggerFactory.getLogger(LogService.class);
+    private static final Logger logger = Logger.getInstance();
     private static LogService instance;
     private final CopyOnWriteArrayList<LogListener> logListeners;
     private boolean isLoggingEnabled;
@@ -95,8 +93,10 @@ public class LogService {
         String formattedMessage = formatLog("ERROR", message);
         logger.error(formattedMessage, throwable);
         notifyLogListeners(formattedMessage);
-        // 可以选择是否将异常堆栈也发送给监听器
+        // 将异常堆栈也发送给监听器
     }
+
+
 
     /**
      * 格式化日志消息
@@ -140,7 +140,7 @@ public class LogService {
                 try {
                     listener.onLogAdded(message);
                 } catch (Exception e) {
-                    logger.error("通知日志监听器失败", e);
+                    logger.error("通知日志监听器失败: " + e.getMessage());
                 }
             }
         }
@@ -152,7 +152,7 @@ public class LogService {
      */
     public void setLoggingEnabled(boolean enabled) {
         this.isLoggingEnabled = enabled;
-        logger.info("日志显示已{}", enabled ? "启用" : "禁用");
+        logger.info("日志显示已" + (enabled ? "启用" : "禁用"));
     }
 
     /**

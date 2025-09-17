@@ -4,8 +4,7 @@ import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.model.Task;
 import com.iot.plc.model.TaskDetail;
 import com.iot.plc.scheduler.TaskScheduler;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.iot.plc.logger.Logger;
 
 import java.sql.SQLException;
 import java.util.List;
@@ -17,7 +16,7 @@ import java.util.concurrent.Executors;
  * 负责定时任务的管理、调度和执行
  */
 public class TaskListService {
-    private static final Logger logger = LoggerFactory.getLogger(TaskListService.class);
+    private static final Logger logger = Logger.getInstance();
     private static TaskListService instance;
     private final ExecutorService executorService;
 
@@ -47,10 +46,10 @@ public class TaskListService {
     public List<Task> loadTasks() {
         try {
             List<Task> tasks = DatabaseManager.getAllTasks();
-            logger.info("加载任务成功，共加载 {} 个任务", tasks.size());
+            logger.info("加载任务成功，共加载 " + tasks.size() + " 个任务");
             return tasks;
         } catch (SQLException e) {
-            logger.error("加载任务失败: {}", e.getMessage(), e);
+            logger.error("加载任务失败: " + e.getMessage(), e);
             throw new RuntimeException("加载任务失败", e);
         }
     }
@@ -63,10 +62,10 @@ public class TaskListService {
     public List<TaskDetail> getTaskDetails(int taskId) {
         try {
             List<TaskDetail> details = DatabaseManager.getTaskDetailsByTaskId(taskId);
-            logger.info("加载任务详情成功，任务ID: {}, 详情数量: {}", taskId, details.size());
+            logger.info("加载任务详情成功，任务ID: " + taskId + ", 详情数量: " + details.size());
             return details;
         } catch (SQLException e) {
-            logger.error("加载任务详情失败，任务ID: {}, 错误: {}", taskId, e.getMessage(), e);
+            logger.error("加载任务详情失败，任务ID: " + taskId + ", 错误: " + e.getMessage(), e);
             throw new RuntimeException("加载任务详情失败", e);
         }
     }
@@ -89,7 +88,7 @@ public class TaskListService {
 
             logger.info("所有定时任务已成功开启");
         } catch (SQLException e) {
-            logger.error("开启定时任务失败: {}", e.getMessage(), e);
+            logger.error("开启定时任务失败: " + e.getMessage(), e);
             throw new RuntimeException("开启定时任务失败", e);
         }
     }
@@ -111,7 +110,7 @@ public class TaskListService {
 
             logger.info("所有定时任务已成功关闭");
         } catch (SQLException e) {
-            logger.error("关闭定时任务失败: {}", e.getMessage(), e);
+            logger.error("关闭定时任务失败: " + e.getMessage(), e);
             throw new RuntimeException("关闭定时任务失败", e);
         }
     }
@@ -124,9 +123,9 @@ public class TaskListService {
         try {
             validateTask(task);
             DatabaseManager.saveTask(task);
-            logger.info("任务保存成功，任务ID: {}, 任务名称: {}", task.getId(), task.getTaskName());
+            logger.info("任务保存成功，任务ID: " + task.getId() + ", 任务名称: " + task.getTaskName());
         } catch (SQLException e) {
-            logger.error("任务保存失败: {}", e.getMessage(), e);
+            logger.error("任务保存失败: " + e.getMessage(), e);
             throw new RuntimeException("任务保存失败", e);
         }
     }
@@ -139,9 +138,9 @@ public class TaskListService {
         try {
             validateTaskDetail(detail);
             DatabaseManager.saveTaskDetail(detail);
-            logger.info("任务详情保存成功，任务ID: {}, 字段名称: {}", detail.getTaskId(), detail.getFieldName());
+            logger.info("任务详情保存成功，任务ID: " + detail.getTaskId() + ", 字段名称: " + detail.getFieldName());
         } catch (SQLException e) {
-            logger.error("任务详情保存失败: {}", e.getMessage(), e);
+            logger.error("任务详情保存失败: " + e.getMessage(), e);
             throw new RuntimeException("任务详情保存失败", e);
         }
     }
@@ -153,9 +152,9 @@ public class TaskListService {
     public void deleteTask(int taskId) {
         try {
             DatabaseManager.deleteTask(taskId);
-            logger.info("任务删除成功，任务ID: {}", taskId);
+            logger.info("任务删除成功，任务ID: " + taskId);
         } catch (SQLException e) {
-            logger.error("任务删除失败，任务ID: {}, 错误: {}", taskId, e.getMessage(), e);
+            logger.error("任务删除失败，任务ID: " + taskId + ", 错误: " + e.getMessage(), e);
             throw new RuntimeException("任务删除失败", e);
         }
     }
@@ -167,9 +166,9 @@ public class TaskListService {
     public void deleteTaskDetail(int detailId) {
         try {
             DatabaseManager.deleteTaskDetail(detailId);
-            logger.info("任务详情删除成功，详情ID: {}", detailId);
+            logger.info("任务详情删除成功，详情ID: " + detailId);
         } catch (SQLException e) {
-            logger.error("任务详情删除失败，详情ID: {}, 错误: {}", detailId, e.getMessage(), e);
+            logger.error("任务详情删除失败，详情ID: " + detailId + ", 错误: " + e.getMessage(), e);
             throw new RuntimeException("任务详情删除失败", e);
         }
     }
@@ -183,13 +182,13 @@ public class TaskListService {
         try {
             Task task = DatabaseManager.getTaskById(taskId);
             if (task != null) {
-                logger.info("获取任务成功，任务ID: {}", taskId);
+                logger.info("获取任务成功，任务ID: " + taskId);
             } else {
-                logger.warn("未找到任务，任务ID: {}", taskId);
+                logger.warn("未找到任务，任务ID: " + taskId);
             }
             return task;
         } catch (SQLException e) {
-            logger.error("获取任务信息失败，任务ID: {}, 错误: {}", taskId, e.getMessage(), e);
+            logger.error("获取任务信息失败，任务ID: " + taskId + ", 错误: " + e.getMessage(), e);
             throw new RuntimeException("获取任务信息失败", e);
         }
     }
@@ -246,4 +245,6 @@ public class TaskListService {
         executorService.shutdown();
         logger.info("TaskListService 已关闭");
     }
+    
+
 }

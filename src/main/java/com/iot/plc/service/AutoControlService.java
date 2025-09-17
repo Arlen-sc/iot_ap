@@ -4,17 +4,15 @@ import com.iot.plc.model.BarcodeData;
 import com.iot.plc.model.ProgramResult;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.iot.plc.logger.Logger;
 
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class AutoControlService {
-    private static final Logger logger = LoggerFactory.getLogger(AutoControlService.class);
+    private static final Logger logger = Logger.getInstance();
     
     private enum State { IDLE, SCANNING, VALIDATING, WAITING_COMMAND, PROGRAMMING, REPORTING, ERROR }
     
@@ -55,7 +53,7 @@ public class AutoControlService {
         try {
             return PlcService.getInstance();
         } catch (Throwable e) {
-            logger.warn("无法初始化PlcService，将使用模拟服务: {}", e.getMessage());
+            logger.warn("无法初始化PlcService，将使用模拟服务: " + e.getMessage());
             return null;
         }
     }
@@ -65,7 +63,7 @@ public class AutoControlService {
         try {
             return UpperComputerService.getInstance();
         } catch (Throwable e) {
-            logger.warn("无法初始化UpperComputerService，将使用模拟服务: {}", e.getMessage());
+            logger.warn("无法初始化UpperComputerService，将使用模拟服务: " + e.getMessage());
             return null;
         }
     }
@@ -75,7 +73,7 @@ public class AutoControlService {
         try {
             return EmsService.getInstance();
         } catch (Throwable e) {
-            logger.warn("无法初始化EmsService，将使用模拟服务: {}", e.getMessage());
+            logger.warn("无法初始化EmsService，将使用模拟服务: " + e.getMessage());
             return null;
         }
     }
@@ -99,17 +97,19 @@ public class AutoControlService {
         logger.info("自动控制服务已初始化，由于缺少依赖，部分功能可能无法正常工作");
     }
     
+
+    
     public void processBarcode(String port, String barcode) {
         if (currentDeviceId == null) {
             currentDeviceId = "DEV_" + System.currentTimeMillis() % 1000;
-            logger.info("自动分配设备号: {}", currentDeviceId);
+            logger.info("自动分配设备号: " + currentDeviceId);
         }
         
         BarcodeData data = new BarcodeData(currentDeviceId, barcode, port);
         barcodeMap.computeIfAbsent(currentDeviceId, k -> new ArrayList<>()).add(data);
         
         updateState(State.SCANNING);
-        logger.info("收到条码: {}", barcode);
+        logger.info("收到条码: " + barcode);
     }
     
     private void validateProductCount(String plcMessage) {
@@ -129,12 +129,12 @@ public class AutoControlService {
                     logger.info("验证通过，等待开始指令");
                 } else {
                     resetProcess();
-                    logger.info("条码数量不匹配，预期:{}, 实际:{}", expectedProductCount, actualCount);
+                    logger.info("条码数量不匹配，预期:" + expectedProductCount + ", 实际:" + actualCount);
                 }
             }
         } catch (Exception e) {
-            logger.error("PLC消息解析失败: {}", e.getMessage());
-        }
+                logger.error("PLC消息解析失败: " + e.getMessage(), e);
+            }
     }
     
     private void checkStartCommand(String message) {
@@ -152,9 +152,9 @@ public class AutoControlService {
             try {
                 upperService.sendProgramCommand(currentDeviceId, barcodes);
                 updateState(State.PROGRAMMING);
-                logger.info("开始烧录，条码数量: {}", barcodes.size());
+                logger.info("开始烧录，条码数量: " + barcodes.size());
             } catch (Exception e) {
-                logger.error("发送烧录命令失败: {}", e.getMessage());
+                logger.error("发送烧录命令失败: " + e.getMessage(), e);
             }
         }
     }
@@ -170,10 +170,10 @@ public class AutoControlService {
         try {
             emsService.sendProgramResult(result);
             updateState(State.REPORTING);
-            logger.info("结果已上报EMS: {}", result.getStatus());
+            logger.info("结果已上报EMS: " + result.getStatus());
         } catch (Exception e) {
-            logger.error("上报结果失败: {}", e.getMessage());
-        }
+                logger.error("上报结果失败: " + e.getMessage(), e);
+            }
         
         // 完成后重置状态
         resetProcess();
@@ -189,7 +189,7 @@ public class AutoControlService {
     
     private void updateState(State newState) {
         currentState = newState;
-        logger.info("当前状态: {}", newState.name());
+        logger.info("当前状态: " + newState.name());
     }
     
     // 获取当前状态

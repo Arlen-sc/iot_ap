@@ -4,7 +4,6 @@ import com.iot.plc.logger.Logger;
 import org.quartz.*;
 import org.quartz.impl.StdSchedulerFactory;
 
-import java.util.Date;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class TaskScheduler {

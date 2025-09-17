@@ -5,8 +5,6 @@ import com.iot.plc.model.BarcodeInfo;
 import com.iot.plc.model.DeviceResult;
 import com.iot.plc.model.ProgramCommand;
 import com.iot.plc.model.ProgramResult;
-import com.iot.plc.logger.LoggerFactory;
-
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -25,9 +23,11 @@ import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
-import java.util.logging.Logger;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.StringJoiner;
+
+import com.iot.plc.logger.Logger;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -37,7 +37,7 @@ import com.google.gson.GsonBuilder;
  * 用于处理与上位机的通信，包括发送烧录指令和接收烧录结果
  */
 public class UpperComputerService {
-    private static final Logger logger = LoggerFactory.getLogger(UpperComputerService.class.getName());
+    private static final Logger logger = Logger.getInstance();
     private static final Gson gson = new GsonBuilder().setDateFormat("yyyy-MM-dd HH:mm:ss").create();
     
     // 单例模式
@@ -64,6 +64,8 @@ public class UpperComputerService {
     private UpperComputerService() {
         // 私有构造函数
     }
+    
+
     
     public static synchronized UpperComputerService getInstance() {
         if (instance == null) {
@@ -144,7 +146,7 @@ public class UpperComputerService {
             logger.info("Connected to upper computer at " + host + ":" + port);
             return "{\"status\":\"success\"}";
         } catch (Exception e) {
-            logger.severe("Failed to connect to upper computer: " + e.getMessage());
+            logger.error("Failed to connect to upper computer: " + e.getMessage(), e);
             
             // 关闭资源
             shutdown();
@@ -221,7 +223,7 @@ public class UpperComputerService {
      */
     public String sendProgramCommand(String deviceId, List<String> barcodes) {
         if (!connected.get()) {
-            logger.warning("Not connected to upper computer");
+            logger.warn("Not connected to upper computer");
             return "{\"status\":\"error\",\"message\":\"Not connected to upper computer\"}";
         }
         
@@ -244,13 +246,13 @@ public class UpperComputerService {
                 if (future1.isSuccess()) {
                     logger.info("Program command sent successfully: " + json);
                 } else {
-                    logger.severe("Failed to send program command: " + future1.cause().getMessage());
+                    logger.error("Failed to send program command: " + future1.cause().getMessage(), future1.cause());
                 }
             });
             
             return "{\"status\":\"success\",\"message\":\"Command sent successfully\"}";
         } catch (Exception e) {
-            logger.severe("Error sending program command: " + e.getMessage());
+            logger.error("Error sending program command: " + e.getMessage(), e);
             return "{\"status\":\"error\",\"message\":\"" + e.getMessage() + "\"}";
         }
     }
@@ -269,10 +271,10 @@ public class UpperComputerService {
                     processProgramResult(result);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    logger.severe("Result processor interrupted: " + e.getMessage());
+                    logger.error("Result processor interrupted: " + e.getMessage(), e);
                     break;
                 } catch (Exception e) {
-                    logger.severe("Error processing program result: " + e.getMessage());
+                    logger.error("Error processing program result: " + e.getMessage(), e);
                 }
             }
         });
@@ -309,7 +311,7 @@ public class UpperComputerService {
             
             logger.info("Program result processed successfully");
         } catch (Exception e) {
-            logger.severe("Error saving program result: " + e.getMessage());
+            logger.error("Error saving program result: " + e.getMessage(), e);
         }
     }
     
@@ -342,7 +344,7 @@ public class UpperComputerService {
             try {
                 listener.accept(result);
             } catch (Exception e) {
-                logger.severe("Error notifying program result listener: " + e.getMessage());
+                logger.error("Error notifying program result listener: " + e.getMessage(), e);
             }
         }
     }
@@ -364,13 +366,13 @@ public class UpperComputerService {
                 
                 logger.info("Program result added to queue");
             } catch (Exception e) {
-                logger.severe("Error parsing program result: " + e.getMessage());
+                logger.error("Error parsing program result: " + e.getMessage(), e);
             }
         }
         
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-            logger.severe("Exception in upper computer handler: " + cause.getMessage());
+            logger.error("Exception in upper computer handler: " + cause.getMessage(), cause);
             ctx.close();
         }
         

@@ -30,6 +30,7 @@ import com.iot.plc.service.ConfigService;
 import com.iot.plc.model.ConfigItem;
 import com.iot.plc.model.ProgramResult;
 import com.iot.plc.model.DeviceResult;
+import com.iot.plc.logger.Logger;
 
 /**
  * 自动处理面板
@@ -993,6 +994,10 @@ public class AutoProcessPanel extends BorderPane {
     }
     
     private void log(String message) {
+        // 使用统一的Logger类进行日志记录
+        Logger.getInstance().info(message);
+        
+        // 同时在界面上显示日志
         String timestamp = LocalDateTime.now().format(formatter);
         String logMessage = "[" + timestamp + "] " + message;
         

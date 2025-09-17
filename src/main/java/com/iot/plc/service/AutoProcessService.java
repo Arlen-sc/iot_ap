@@ -1,9 +1,7 @@
 package com.iot.plc.service;
 
-import com.iot.plc.logger.LoggerFactory;
 import com.iot.plc.model.BarcodeData;
 import com.iot.plc.model.DeviceResult;
-import com.iot.plc.model.ProgramResult;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -12,7 +10,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Logger;
+
+import com.iot.plc.logger.Logger;
 
 /**
  * 自动处理流程服务
@@ -24,7 +23,7 @@ import java.util.logging.Logger;
  * 5. 保存结果并回传给EMS
  */
 public class AutoProcessService {
-    private static final Logger logger = LoggerFactory.getLogger(AutoProcessService.class.getName());
+    private static final Logger logger = Logger.getInstance();
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static AutoProcessService instance;
     
@@ -32,7 +31,6 @@ public class AutoProcessService {
     private final SerialPortService serialPortService;
     private final PlcService plcService;
     private final UpperComputerService upperComputerService;
-    private final EmsService emsService;
     
     // 状态管理
     private String currentStatus = "空闲";
@@ -59,7 +57,6 @@ public class AutoProcessService {
         this.serialPortService = SerialPortService.getInstance();
         this.plcService = PlcService.getInstance();
         this.upperComputerService = UpperComputerService.getInstance();
-        this.emsService = EmsService.getInstance();
         
         initProcess();
     }

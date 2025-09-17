@@ -1,7 +1,6 @@
 package com.iot.plc.service;
 
 import com.iot.plc.model.ProgramResult;
-import com.iot.plc.logger.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -10,7 +9,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.logging.Logger;
+
+import com.iot.plc.logger.Logger;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -20,7 +20,7 @@ import com.google.gson.GsonBuilder;
  * 用于处理与EMS系统的通信，将烧录结果发送到EMS系统
  */
 public class EmsService {
-    private static final Logger logger = LoggerFactory.getLogger(EmsService.class.getName());
+    private static final Logger logger = Logger.getInstance();
     private static final Gson gson = new GsonBuilder().setDateFormat("yyyy-MM-dd HH:mm:ss").create();
     
     // 单例模式
@@ -67,7 +67,7 @@ public class EmsService {
 
     public void sendProgramResult(ProgramResult result) {
         if (emsApiUrl == null || emsApiUrl.isEmpty()) {
-            logger.warning("EMS API URL not configured");
+            logger.warn("EMS API URL not configured");
             return;
         }
         
@@ -111,7 +111,7 @@ public class EmsService {
                     
                     logger.info("Program result sent to EMS successfully");
                 } else {
-                    logger.warning("Failed to send program result to EMS. Response code: " + responseCode);
+                    logger.warn("Failed to send program result to EMS. Response code: " + responseCode);
                     
                     // 读取错误响应
                     try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream(), "utf-8"))) {
@@ -120,15 +120,14 @@ public class EmsService {
                         while ((responseLine = br.readLine()) != null) {
                             response.append(responseLine.trim());
                         }
-                        logger.warning("EMS error response: " + response.toString());
+                        logger.warn("EMS error response: " + response.toString());
                     }
                     
                     // 重试逻辑
                     scheduleRetry(result);
                 }
             } catch (Exception e) {
-                logger.severe("Error sending program result to EMS: " + e.getMessage());
-                
+                logger.error("Error sending program result to EMS: " + e.getMessage(), e);
                 // 重试逻辑
                 scheduleRetry(result);
             }
@@ -157,4 +156,5 @@ public class EmsService {
     public void shutdown() {
         executorService.shutdown();
     }
+
 }

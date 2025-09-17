@@ -2,8 +2,7 @@ package com.iot.plc.service;
 
 import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.model.ConfigItem;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.iot.plc.logger.Logger;
 
 import java.sql.SQLException;
 import java.util.List;
@@ -15,7 +14,7 @@ import java.util.concurrent.Executors;
  * 负责系统配置项的管理、查询和维护
  */
 public class ConfigService {
-    private static final Logger logger = LoggerFactory.getLogger(ConfigService.class);
+    private static final Logger logger = Logger.getInstance();
     private static ConfigService instance;
     private final ExecutorService executorService;
 
@@ -45,10 +44,10 @@ public class ConfigService {
     public List<ConfigItem> getAllConfigItems() {
         try {
             List<ConfigItem> configItems = DatabaseManager.getAllConfigItems();
-            logger.info("加载配置项成功，共加载 {} 个配置项", configItems.size());
+            logger.info("加载配置项成功，共加载 " + configItems.size() + " 个配置项");
             return configItems;
         } catch (SQLException e) {
-            logger.error("加载配置项失败: {}", e.getMessage(), e);
+            logger.error("加载配置项失败: " + e.getMessage(), e);
             throw new RuntimeException("加载配置项失败", e);
         }
     }
@@ -62,13 +61,13 @@ public class ConfigService {
         try {
             ConfigItem configItem = DatabaseManager.getConfigItemById(configId);
             if (configItem != null) {
-                logger.info("获取配置项成功，配置ID: {}", configId);
+                logger.info("获取配置项成功，配置ID: " + configId);
             } else {
-                logger.warn("未找到配置项，配置ID: {}", configId);
+                logger.warn("未找到配置项，配置ID: " + configId);
             }
             return configItem;
         } catch (SQLException e) {
-            logger.error("获取配置项失败，配置ID: {}, 错误: {}", configId, e.getMessage(), e);
+            logger.error("获取配置项失败，配置ID: " + configId + ", 错误: " + e.getMessage(), e);
             throw new RuntimeException("获取配置项失败", e);
         }
     }
@@ -81,9 +80,9 @@ public class ConfigService {
         try {
             validateConfigItem(configItem);
             DatabaseManager.saveConfigItem(configItem);
-            logger.info("配置项保存成功，配置键: {}", configItem.getConfigKey());
+            logger.info("配置项保存成功，配置键: " + configItem.getConfigKey());
         } catch (SQLException e) {
-            logger.error("配置项保存失败: {}", e.getMessage(), e);
+            logger.error("配置项保存失败: " + e.getMessage(), e);
             throw new RuntimeException("配置项保存失败", e);
         }
     }
@@ -95,9 +94,9 @@ public class ConfigService {
     public void deleteConfigItem(int configId) {
         try {
             DatabaseManager.deleteConfigItem(configId);
-            logger.info("配置项删除成功，配置ID: {}", configId);
+            logger.info("配置项删除成功，配置ID: " + configId);
         } catch (SQLException e) {
-            logger.error("配置项删除失败，配置ID: {}, 错误: {}", configId, e.getMessage(), e);
+            logger.error("配置项删除失败，配置ID: " + configId + ", 错误: " + e.getMessage(), e);
             throw new RuntimeException("配置项删除失败", e);
         }
     }
@@ -112,14 +111,14 @@ public class ConfigService {
             List<ConfigItem> configItems = DatabaseManager.getAllConfigItems();
             for (ConfigItem item : configItems) {
                 if (item.getConfigKey().equals(configKey)) {
-                    logger.info("获取配置值成功，配置键: {}", configKey);
+                    logger.info("获取配置值成功，配置键: " + configKey);
                     return item.getConfigValue();
                 }
             }
-            logger.warn("未找到配置项，配置键: {}", configKey);
+            logger.warn("未找到配置项，配置键: " + configKey);
             return null;
         } catch (SQLException e) {
-            logger.error("获取配置值失败，配置键: {}, 错误: {}", configKey, e.getMessage(), e);
+            logger.error("获取配置值失败，配置键: " + configKey + ", 错误: " + e.getMessage(), e);
             throw new RuntimeException("获取配置值失败", e);
         }
     }
@@ -129,6 +128,8 @@ public class ConfigService {
      * @param configItem 配置项对象
      * @throws IllegalArgumentException 当必填字段为空时抛出
      */
+    
+    
     private void validateConfigItem(ConfigItem configItem) {
         if (configItem.getConfigKey() == null || configItem.getConfigKey().trim().isEmpty()) {
             throw new IllegalArgumentException("配置项为必填项");

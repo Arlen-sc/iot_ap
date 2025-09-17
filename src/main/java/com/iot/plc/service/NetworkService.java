@@ -1,11 +1,11 @@
 package com.iot.plc.service;
 
-import com.iot.plc.logger.LoggerFactory;
 import java.io.IOException;
 import java.net.*;
-import java.util.logging.Logger;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import com.iot.plc.logger.Logger;
 
 /**
  * 网络接收服务类
@@ -13,7 +13,7 @@ import java.util.concurrent.Executors;
  * 支持ASCII和HEX格式的数据接收
  */
 public class NetworkService {
-    private static final Logger logger = LoggerFactory.getLogger(NetworkService.class.getName());
+    private static final Logger logger = Logger.getInstance();
     private static final NetworkService instance = new NetworkService();
     private ExecutorService executorService;
     private boolean isRunning = false;
@@ -112,7 +112,7 @@ public class NetworkService {
                 tcpServerSocket.close();
             }
         } catch (IOException e) {
-            logger.warning("Failed to close TCP server socket: " + e.getMessage());
+            logger.warn("Failed to close TCP server socket: " + e.getMessage());
         }
         
         try {
@@ -120,7 +120,7 @@ public class NetworkService {
                 tcpClientSocket.close();
             }
         } catch (IOException e) {
-            logger.warning("Failed to close TCP client socket: " + e.getMessage());
+            logger.warn("Failed to close TCP client socket: " + e.getMessage());
         }
         
         if (udpSocket != null && !udpSocket.isClosed()) {
@@ -150,13 +150,13 @@ public class NetworkService {
                         executorService.submit(() -> handleTcpConnection(clientSocket));
                     } catch (IOException e) {
                         if (isRunning) { // 只有在服务运行时才记录错误
-                            logger.warning("Error accepting TCP connection: " + e.getMessage());
+                            logger.warn("Error accepting TCP connection: " + e.getMessage());
                             notifyConnectionStatus(false);
                         }
                     }
                 }
             } catch (IOException e) {
-                logger.severe("Failed to start TCP server: " + e.getMessage());
+                logger.error("Failed to start TCP server: " + e.getMessage(), e);
                 notifyConnectionStatus(false);
             }
         });
@@ -173,7 +173,7 @@ public class NetworkService {
                 notifyConnectionStatus(true);
                 handleTcpConnection(tcpClientSocket);
             } catch (IOException e) {
-                logger.severe("Failed to connect to TCP server: " + e.getMessage());
+                logger.error("Failed to connect to TCP server: " + e.getMessage(), e);
                 notifyConnectionStatus(false);
             }
         });
@@ -200,12 +200,12 @@ public class NetworkService {
                         logger.info("Received UDP data from " + packet.getAddress().getHostAddress() + ":" + packet.getPort() + ": " + receivedData);
                     } catch (IOException e) {
                         if (isRunning) { // 只有在服务运行时才记录错误
-                            logger.warning("Error receiving UDP data: " + e.getMessage());
+                            logger.warn("Error receiving UDP data: " + e.getMessage());
                         }
                     }
                 }
             } catch (SocketException e) {
-                logger.severe("Failed to start UDP server: " + e.getMessage());
+                logger.error("Failed to start UDP server: " + e.getMessage(), e);
                 notifyConnectionStatus(false);
             }
         });
@@ -226,7 +226,7 @@ public class NetworkService {
             }
         } catch (IOException e) {
             if (isRunning) { // 只有在服务运行时才记录错误
-                logger.warning("Error handling TCP connection: " + e.getMessage());
+                logger.warn("Error handling TCP connection: " + e.getMessage());
             }
         } finally {
             try {
@@ -234,7 +234,7 @@ public class NetworkService {
                     socket.close();
                 }
             } catch (IOException e) {
-                logger.warning("Failed to close TCP socket: " + e.getMessage());
+                logger.warn("Failed to close TCP socket: " + e.getMessage());
             }
             notifyConnectionStatus(false);
         }
@@ -268,7 +268,7 @@ public class NetworkService {
      */
     public void sendData(String data) {
         if (!isRunning || currentConfig == null) {
-            logger.warning("Cannot send data: network service not running");
+            logger.warn("Cannot send data: network service not running");
             return;
         }
         
@@ -283,14 +283,14 @@ public class NetworkService {
             switch (currentConfig.getProtocolType()) {
                 case TCP_SERVER:
                     // TCP服务端需要知道目标客户端
-                    logger.warning("TCP server cannot send data directly, need client information");
+                    logger.warn("TCP server cannot send data directly, need client information");
                     break;
                 case TCP_CLIENT:
                     if (tcpClientSocket != null && tcpClientSocket.isConnected()) {
                         tcpClientSocket.getOutputStream().write(bytes);
                         logger.info("Sent TCP data: " + data);
                     } else {
-                        logger.warning("TCP client not connected");
+                        logger.warn("TCP client not connected");
                     }
                     break;
                 case UDP:
@@ -303,7 +303,7 @@ public class NetworkService {
                     break;
             }
         } catch (Exception e) {
-            logger.warning("Failed to send data: " + e.getMessage());
+            logger.warn("Failed to send data: " + e.getMessage());
         }
     }
     
@@ -360,4 +360,6 @@ public class NetworkService {
         stopService();
         executorService.shutdown();
     }
+    
+
 }

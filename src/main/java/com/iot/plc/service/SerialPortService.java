@@ -2,14 +2,13 @@ package com.iot.plc.service;
 
 import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.model.BarcodeData;
-import com.iot.plc.logger.LoggerFactory;
+import com.iot.plc.logger.Logger;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Logger;
 
 import jssc.SerialPort;
 import jssc.SerialPortEvent;
@@ -34,7 +33,7 @@ public class SerialPortService {
     public void setDataListener(DataListener listener) {
         this.dataListener = listener;
     }
-    private static final Logger logger = LoggerFactory.getLogger(SerialPortService.class.getName());
+    private static final Logger logger = Logger.getInstance();
     
     // 设备ID与串口映射
     private Map<String, SerialPort> devicePortMap = new HashMap<>();
@@ -79,7 +78,7 @@ public class SerialPortService {
             }
             
             if (!portExists) {
-                logger.severe("Port " + portName + " does not exist");
+                logger.error("Port " + portName + " does not exist");
                 return false;
             }
             
@@ -102,7 +101,7 @@ public class SerialPortService {
                 // 这里可以根据具体设备协议进行调整
                 boolean deviceConnected = verifyDeviceConnection(serialPort);
                 if (!deviceConnected) {
-                    logger.severe("Device not responding on port " + portName);
+                    logger.error("Device not responding on port " + portName);
                     serialPort.closePort();
                     return false;
                 }
@@ -130,8 +129,8 @@ public class SerialPortService {
                                     processBarcode(deviceId, barcode, portName);
                                 }
                             } catch (SerialPortException ex) {
-                                logger.severe("Error reading from serial port: " + ex.getMessage());
-                            }
+                logger.error("Error reading from serial port: " + ex.getMessage(), ex);
+            }
                         }
                     }
                 });
@@ -147,22 +146,24 @@ public class SerialPortService {
                 logger.info("Serial port initialized for device " + deviceId + " on port " + portName);
                 return true;
             } catch (SerialPortException e) {
-                logger.severe("Failed to initialize serial port for device " + deviceId + ": " + e.getMessage());
+                logger.error("Failed to initialize serial port for device " + deviceId + ": " + e.getMessage(), e);
                 // 确保在异常情况下关闭端口
                 if (serialPort != null && serialPort.isOpened()) {
                     try {
                         serialPort.closePort();
                     } catch (SerialPortException ex) {
-                        logger.severe("Failed to close port after initialization error: " + ex.getMessage());
+                        logger.error("Failed to close port after initialization error: " + ex.getMessage(), ex);
                     }
                 }
                 return false;
             }
         } catch (Exception e) {
-            logger.severe("Unexpected error during serial port initialization: " + e.getMessage());
-            return false;
+                logger.error("Unexpected error during serial port initialization: " + e.getMessage(), e);
+                return false;
         }
     }
+    
+
     
     /**
      * 验证设备连接状态
@@ -173,7 +174,7 @@ public class SerialPortService {
         try {
             // 检查串口是否已打开
             if (!serialPort.isOpened()) {
-                logger.warning("Serial port is not opened");
+                logger.warn("Serial port is not opened");
                 return false;
             }
 
@@ -181,7 +182,7 @@ public class SerialPortService {
             try {
                 logger.info("Serial port is opened and accessible");
             } catch (Exception e) {
-                logger.warning("Failed to access serial port: " + e.getMessage());
+                logger.warn("Failed to access serial port: " + e.getMessage());
                 // 如果无法访问端口，视为端口无效
                 return false;
             }
@@ -196,7 +197,7 @@ public class SerialPortService {
                 serialPort.setFlowControlMode(flowControl);
                 logger.info("Serial port command test passed");
             } catch (Exception e) {
-                logger.warning("Serial port command test failed: " + e.getMessage());
+                logger.warn("Serial port command test failed: " + e.getMessage());
                 return false;
             }
 
@@ -206,7 +207,7 @@ public class SerialPortService {
                 serialPort.purgePort(SerialPort.PURGE_RXCLEAR);
                 logger.info("Serial port input buffer cleared successfully");
             } catch (Exception e) {
-                logger.warning("Failed to clear input buffer: " + e.getMessage());
+                logger.warn("Failed to clear input buffer: " + e.getMessage());
                 return false;
             }
 
@@ -214,7 +215,7 @@ public class SerialPortService {
             logger.info("Serial port verification passed");
             return true;
         } catch (Exception e) {
-            logger.warning("Device verification failed: " + e.getMessage());
+            logger.warn("Device verification failed: " + e.getMessage());
             return false;
         }
     }
@@ -249,8 +250,8 @@ public class SerialPortService {
             DatabaseManager.saveBarcodeData(deviceId, barcode, portName);
             logger.info("Barcode data saved to database");
         } catch (Exception e) {
-            logger.severe("Failed to save barcode data to database: " + e.getMessage());
-        }
+                logger.error("Failed to save barcode data to database: " + e.getMessage(), e);
+            }
     }
     
     /**
@@ -293,7 +294,7 @@ public class SerialPortService {
                 devicePortMap.remove(deviceId);
                 logger.info("Serial port closed for device " + deviceId);
             } catch (SerialPortException e) {
-                logger.severe("Failed to close serial port for device " + deviceId + ": " + e.getMessage());
+                logger.error("Failed to close serial port for device " + deviceId + ": " + e.getMessage(), e);
             }
         }
     }
@@ -311,8 +312,8 @@ public class SerialPortService {
                     serialPort.closePort();
                     logger.info("Serial port closed for device " + deviceId);
                 } catch (SerialPortException e) {
-                    logger.severe("Failed to close serial port for device " + deviceId + ": " + e.getMessage());
-                }
+                logger.error("Failed to close serial port for device " + deviceId + ": " + e.getMessage(), e);
+            }
             }
         }
         devicePortMap.clear();

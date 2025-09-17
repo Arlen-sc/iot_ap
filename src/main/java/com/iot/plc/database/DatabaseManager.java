@@ -2,6 +2,7 @@ package com.iot.plc.database;
 
 import com.iot.plc.model.*;
 import com.iot.plc.logger.LogManager;
+import com.iot.plc.logger.Logger;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -11,19 +12,22 @@ import java.util.Map;
 
 public class DatabaseManager {
     private static final String DB_URL = "jdbc:sqlite:plc_tasks.db";
+    private static final Logger logger = Logger.getInstance();
     
     static {
         try {
             Class.forName("org.sqlite.JDBC");
             initializeDatabase();
-        } catch (ClassNotFoundException e) {
-            e.printStackTrace();
-        }
+        } catch (Exception e) {
+                logger.error("JDBC驱动加载失败: " + e.getMessage(), e);
+            }
     }
     
     private static void initializeDatabase() {
         try (Connection conn = DriverManager.getConnection(DB_URL);
              Statement stmt = conn.createStatement()) {
+            
+            logger.info("开始初始化数据库");
             
             String createTasksTable = "CREATE TABLE IF NOT EXISTS tasks (" +
                     "id INTEGER PRIMARY KEY AUTOINCREMENT," +
@@ -109,12 +113,14 @@ public class DatabaseManager {
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_program_batch ON program_result(batch_id)");
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_program_device ON program_result(device_id)");
             
-        } catch (SQLException e) {
-            e.printStackTrace();
+            logger.info("数据库初始化完成");
+        } catch (Exception e) {
+            logger.error("数据库初始化失败: " + e.getMessage(), e);
         }
     }
     
     public static Connection getConnection() throws SQLException {
+        logger.debug("获取数据库连接");
         return DriverManager.getConnection(DB_URL);
     }
     
@@ -404,8 +410,12 @@ public class DatabaseManager {
             // 按时间倒序排序
             results.sort((r1, r2) -> r2.getTimestamp().compareTo(r1.getTimestamp()));
             
+            logger.debug("获取所有烧录结果成功，共" + results.size() + "条记录");
             return results;
-        }
+        } catch (SQLException e) {
+                logger.error("获取所有烧录结果失败: " + e.getMessage(), e);
+                throw e;
+            }
     }
     
     // ConfigItem相关操作
@@ -425,6 +435,10 @@ public class DatabaseManager {
                 pstmt.setInt(6, configItem.getId());
                 
                 pstmt.executeUpdate();
+                logger.debug("更新配置项成功: " + configItem.getConfigKey());
+            } catch (SQLException e) {
+                logger.error("更新配置项失败: " + configItem.getConfigKey() + " - " + e.getMessage(), e);
+                throw e;
             }
         } else {
             // 添加新配置项
@@ -441,6 +455,10 @@ public class DatabaseManager {
                 pstmt.setBoolean(5, configItem.isRequired());
                 
                 pstmt.executeUpdate();
+                logger.debug("添加新配置项成功: " + configItem.getConfigKey());
+            } catch (SQLException e) {
+                logger.error("添加新配置项失败: " + configItem.getConfigKey() + " - " + e.getMessage(), e);
+                throw e;
             }
         }
     }
@@ -501,6 +519,11 @@ public class DatabaseManager {
             
             pstmt.setInt(1, configId);
             pstmt.executeUpdate();
-        }
+            logger.debug("删除配置项成功: ID=" + configId);
+        } catch (SQLException e) {
+                logger.error("删除配置项失败: ID=" + configId + " - " + e.getMessage(), e);
+                throw e;
+            }
     }
+    
 }
