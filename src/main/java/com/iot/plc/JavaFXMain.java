@@ -1,14 +1,11 @@
 package com.iot.plc;
 
-import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.logger.Logger;
-import com.iot.plc.model.Task;
-import com.iot.plc.scheduler.TaskScheduler;
 import com.iot.plc.ui.JavaFXLogPanel;
 import com.iot.plc.ui.LogsManagementPanel;
 import com.iot.plc.ui.JavaFXConfigPanel;
 import com.iot.plc.ui.AutoProcessPanel;
-import com.iot.plc.service.TaskListService;
+import com.iot.plc.service.ConfigService;
 import javafx.application.Application;
 import javafx.scene.Scene;
 import javafx.scene.control.Tab;
@@ -16,69 +13,25 @@ import javafx.scene.control.TabPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
-import java.sql.SQLException;
-import java.util.List;
-
 public class JavaFXMain extends Application {
     private static TabPane tabbedPane;
 
-    // 临时注释，因为JavaFXConfigPanel类已删除
-    /*public static void showConfigPanelForTask(int taskId) {
-        // 在JavaFX中，我们直接切换到配置管理标签页
-        if (tabbedPane != null) {
-            tabbedPane.getSelectionModel().select(1); // 切换到配置管理标签页
-        }
-    }*/
-
     @Override
     public void start(Stage primaryStage) {
-        // 初始化数据库和调度器
-        try {
-            List<Task> tasks = DatabaseManager.getAllTasks();
-            System.out.println("数据库中的任务数量: " + tasks.size());
-            for (Task task : tasks) {
-                System.out.println("任务ID: " + task.getId() + 
-                        ", cron表达式: " + task.getCronExpression());
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-
-        // 启动定时任务调度器
-        TaskScheduler.getInstance().start();
-
-        // 添加关闭钩子
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            TaskScheduler.getInstance().stop();
-            System.out.println("应用程序已关闭");
-        }));
-
-        // 临时注释：跳过自动处理流程服务和自动控制服务的初始化，因为它们依赖Netty
-        // AutoProcessService autoProcessService = AutoProcessService.getInstance();
-        // Logger.getInstance().info("自动处理流程服务已初始化");
-        
-        // AutoControlService autoControlService = AutoControlService.getInstance();
-        // Logger.getInstance().info("自动控制服务已初始化");
-
-        // 初始化任务列表服务（不依赖Netty）
-        TaskListService.getInstance();
-        Logger.getInstance().info("任务列表服务已初始化");
+        // 初始化配置服务
+        ConfigService.getInstance();
+        Logger.getInstance().info("配置服务已初始化");
 
         // 创建主布局
         VBox root = new VBox();
         tabbedPane = new TabPane();
 
-        // // 任务列表界面
-        // Tab taskListTab = new Tab("任务列表");
-        // // 注意：这里不再创建UI面板，仅保留标签页以保持界面结构
-        // taskListTab.setClosable(false);
-
-        // 配置界面（临时注释，因为JavaFXConfigPanel类已删除）
+        // 配置界面
         JavaFXConfigPanel configPanel = new JavaFXConfigPanel();
         Tab configTab = new Tab("配置管理",configPanel);
         configTab.setClosable(false);
 
-        // 创建自动控制面板（使用SwingNode包装Swing组件）
+        // 创建自动控制面板
         AutoProcessPanel autoControlPanel = new AutoProcessPanel();
         Tab autoControlTab = new Tab("自动控制", autoControlPanel);
         autoControlTab.setClosable(false);
@@ -93,8 +46,8 @@ public class JavaFXMain extends Application {
         Tab logsManagementTab = new Tab("日志管理", logsManagementPanel);
         logsManagementTab.setClosable(false);
 
-        // 将标签页添加到标签面板 - 自动控制作为运行界面（第一个标签页）
-        tabbedPane.getTabs().addAll(autoControlTab,  configTab, logTab, logsManagementTab);
+        // 将标签页添加到标签面板
+        tabbedPane.getTabs().addAll(autoControlTab, configTab, logTab, logsManagementTab);
 
         // 将LogPanel实例传递给Logger
         Logger.getInstance().setLogPanel(logPanel);

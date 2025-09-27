@@ -9,14 +9,20 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.*;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.TilePane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.sql.SQLException;
@@ -27,10 +33,11 @@ import javafx.scene.layout.GridPane;
 import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.service.EmsService;
 import com.iot.plc.service.ConfigService;
+import com.iot.plc.service.SerialPortService;
+import com.iot.plc.service.NetworkService;
 import com.iot.plc.model.ConfigItem;
 import com.iot.plc.model.ProgramResult;
 import com.iot.plc.model.DeviceResult;
-import com.iot.plc.logger.Logger;
 
 /**
  * 自动处理面板
@@ -45,6 +52,13 @@ import com.iot.plc.logger.Logger;
  */
 public class AutoProcessPanel extends BorderPane {
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    
+    // 服务实例
+    private NetworkService networkService;
+    private TextArea networkDataArea; // 右侧网络数据显示区域
+    private LinkedList<String> networkDataBuffer = new LinkedList<>(); // 网络数据缓冲区
+    private static final int MAX_NETWORK_DATA_LINES = 100;
+    private final SerialPortService serialPortService;
     
     // 状态管理
     private StringProperty currentStatus = new SimpleStringProperty("空闲");
@@ -66,7 +80,6 @@ public class AutoProcessPanel extends BorderPane {
     private TableView<BarcodeData> barcodeTable;
     private TableView<BurnResultData> burnResultTable;
     private TextArea logArea;
-    private Button startProcessButton;
     private Button resetProcessButton;
     private Button clearBarcodesButton;
     private Button simulateScanButton;
@@ -93,10 +106,12 @@ public class AutoProcessPanel extends BorderPane {
     private Random random = new Random();
     
     public AutoProcessPanel() {
+        // 初始化服务实例
+        this.serialPortService = SerialPortService.getInstance();
+        
         initUI();
         startStatusUpdateThread();
         loadExpectedBarcodeCountFromConfig();
-        simulateConnections(); // 模拟连接状态
     }
     
     /**
@@ -201,6 +216,7 @@ public class AutoProcessPanel extends BorderPane {
         
         // 中部表格区域 - 将条码数据和烧录结果合并到一个界面
         VBox dataPanel = new VBox(10);
+        dataPanel.setPrefWidth(Region.USE_COMPUTED_SIZE);
         
         // 条码表格
         barcodeTable = createBarcodeTable();
@@ -212,49 +228,132 @@ public class AutoProcessPanel extends BorderPane {
         Label resultLabel = new Label("烧录结果");
         resultLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 14px;");
         
+        ScrollPane barcodeScrollPane = new ScrollPane(barcodeTable);
+        barcodeScrollPane.setFitToWidth(true);
+        barcodeScrollPane.setFitToHeight(true);
+        VBox.setVgrow(barcodeScrollPane, Priority.ALWAYS);
+        
+        ScrollPane resultScrollPane = new ScrollPane(burnResultTable);
+        resultScrollPane.setFitToWidth(true);
+        resultScrollPane.setFitToHeight(true);
+        VBox.setVgrow(resultScrollPane, Priority.ALWAYS);
+        
         dataPanel.getChildren().addAll(
             barcodeLabel, 
-            new ScrollPane(barcodeTable), 
+            barcodeScrollPane, 
             resultLabel, 
-            new ScrollPane(burnResultTable)
+            resultScrollPane
         );
         
         // 底部日志和操作按钮
         VBox bottomBox = new VBox(10);
+        bottomBox.setPrefWidth(Region.USE_COMPUTED_SIZE);
         
-        // 操作按钮
-        HBox buttonBox = new HBox(10);
-        startProcessButton = new Button("启动流程");
+        // 操作按钮 - 设置为可换行
+        FlowPane buttonFlowPane = new FlowPane();
+        buttonFlowPane.setHgap(10);
+        buttonFlowPane.setVgap(5);
+        buttonFlowPane.setPrefWrapLength(Region.USE_COMPUTED_SIZE); // 自动计算换行宽度
+        buttonFlowPane.setPrefWidth(Region.USE_COMPUTED_SIZE);
+        
         resetProcessButton = new Button("重置流程");
         clearBarcodesButton = new Button("清空条码");
         simulateScanButton = new Button("模拟扫描");
         simulatePlcCountButton = new Button("模拟PLC数量");
         simulatePlcStartButton = new Button("模拟PLC开始");
+        Button simulateComDataButton = new Button("模拟COM口数据");
         
-        startProcessButton.setOnAction(e -> startProcess());
         resetProcessButton.setOnAction(e -> resetProcess());
         clearBarcodesButton.setOnAction(e -> clearBarcodes());
         simulateScanButton.setOnAction(e -> simulateBarcodeScan());
         simulatePlcCountButton.setOnAction(e -> simulatePlcProductCount());
         simulatePlcStartButton.setOnAction(e -> simulatePlcStartCommand());
+        simulateComDataButton.setOnAction(e -> showComDataInputDialog());
         
-        buttonBox.getChildren().addAll(
-                startProcessButton, resetProcessButton, clearBarcodesButton,
-                simulateScanButton, simulatePlcCountButton, simulatePlcStartButton
+        buttonFlowPane.getChildren().addAll(
+                resetProcessButton, clearBarcodesButton,
+                simulateScanButton, simulatePlcCountButton, simulatePlcStartButton,
+                simulateComDataButton
         );
         
-        // 日志区域
+        // 日志区域（左侧）
         logArea = new TextArea();
         logArea.setEditable(false);
-        logArea.setPrefHeight(200);
+        logArea.setPrefHeight(Region.USE_COMPUTED_SIZE);
         ScrollPane logScrollPane = new ScrollPane(logArea);
+        logScrollPane.setFitToWidth(true);
+        logScrollPane.setFitToHeight(true);
         
-        bottomBox.getChildren().addAll(buttonBox, logScrollPane);
+        // 网络数据显示区域（右侧）
+        networkDataArea = new TextArea();
+        networkDataArea.setEditable(false);
+        networkDataArea.setPrefHeight(Region.USE_COMPUTED_SIZE);
+        networkDataArea.setPromptText("网络服务接收数据显示区域");
+        ScrollPane networkDataScrollPane = new ScrollPane(networkDataArea);
+        networkDataScrollPane.setFitToWidth(true);
+        networkDataScrollPane.setFitToHeight(true);
+        
+        // 创建左右布局的HBox，确保在小屏幕上能够适当缩放
+        HBox logContainer = new HBox(10);
+        logContainer.getChildren().addAll(logScrollPane, networkDataScrollPane);
+        logContainer.setFillHeight(true);
+        VBox.setVgrow(logContainer, Priority.ALWAYS);
+        
+        // 为左右日志区域设置权重，确保均匀分配空间
+        HBox.setHgrow(logScrollPane, Priority.ALWAYS);
+        HBox.setHgrow(networkDataScrollPane, Priority.ALWAYS);
+        
+        bottomBox.getChildren().addAll(buttonFlowPane, logContainer);
         
         setCenter(dataPanel);
         setBottom(bottomBox);
         
         setPadding(new Insets(10));
+        
+        // 设置面板自适应父容器大小
+        setPrefWidth(Region.USE_COMPUTED_SIZE);
+        setPrefHeight(Region.USE_COMPUTED_SIZE);
+        
+        // 添加窗口大小变化监听器，实现真正的自适应布局
+        widthProperty().addListener((obs, oldWidth, newWidth) -> {
+            adjustLayoutForWindowSize();
+        });
+        
+        heightProperty().addListener((obs, oldHeight, newHeight) -> {
+            adjustLayoutForWindowSize();
+        });
+        
+        // 初始化网络服务
+        initializeNetworkService();
+    }
+    
+    /**
+     * 根据窗口大小调整布局
+     */
+    private void adjustLayoutForWindowSize() {
+        double width = getWidth();
+        double height = getHeight();
+        
+        // 根据窗口宽度调整组件布局
+        if (width > 0) {
+            // 调整日志区域的高度，使其随窗口高度变化
+            double logAreaHeight = Math.max(150, height * 0.2); // 至少150px，或窗口高度的20%
+            if (logArea != null) {
+                logArea.setPrefHeight(logAreaHeight);
+            }
+            if (networkDataArea != null) {
+                networkDataArea.setPrefHeight(logAreaHeight);
+            }
+            
+            // 根据窗口宽度调整表格区域的高度
+            double tableHeight = Math.max(150, height * 0.3); // 至少150px，或窗口高度的30%
+            if (barcodeTable != null && barcodeTable.getParent() instanceof ScrollPane) {
+                ((ScrollPane)barcodeTable.getParent()).setPrefHeight(tableHeight);
+            }
+            if (burnResultTable != null && burnResultTable.getParent() instanceof ScrollPane) {
+                ((ScrollPane)burnResultTable.getParent()).setPrefHeight(tableHeight);
+            }
+        }
     }
     
     // 上位机配置相关常量
@@ -263,34 +362,202 @@ public class AutoProcessPanel extends BorderPane {
     private static final String DEFAULT_UPPER_COMPUTER_IP = "127.0.0.1";
     private static final String DEFAULT_UPPER_COMPUTER_PORT = "8080";
     
-    // 上位机配置UI组件
+    // EMS配置相关常量
+    private static final String CONFIG_KEY_EMS_URL = "ems_api_url";
+    private static final String DEFAULT_EMS_URL = "http://localhost:8080/api";
+    
+    // 配置UI组件
     private Button upperComputerConfigButton;
+    private Button emsConfigButton;
+    
+    // 流程控制开关
+    private ToggleButton processControlToggle;
+    
+    // 初始化网络服务
+    private void initializeNetworkService() {
+        networkService = NetworkService.getInstance();
+        
+        // 设置网络数据监听器
+        networkService.setNetworkListener(new NetworkService.NetworkListener() {
+            @Override
+            public void onDataReceived(String data) {
+                // 在JavaFX应用线程中更新UI
+                Platform.runLater(() -> {
+                    addNetworkData(data);
+                });
+            }
+            
+            @Override
+            public void onConnectionStatusChanged(boolean connected) {
+                // 在JavaFX应用线程中更新UI
+                Platform.runLater(() -> {
+                    String status = connected ? "已连接" : "未连接";
+                    log("[网络状态] " + status);
+                    plcStatus.set(status); // 更新Server状态显示
+                });
+            }
+        });
+    }
+    
+    // 添加网络数据到显示区域，并保持只显示100条
+    private void addNetworkData(String data) {
+        String timestamp = LocalDateTime.now().format(formatter);
+        String formattedData = timestamp + " - " + data;
+        
+        // 添加到缓冲区
+        networkDataBuffer.addLast(formattedData);
+        
+        // 如果超过最大行数，移除最旧的
+        if (networkDataBuffer.size() > MAX_NETWORK_DATA_LINES) {
+            networkDataBuffer.removeFirst();
+        }
+        
+        // 重新构建显示内容
+        StringBuilder sb = new StringBuilder();
+        for (String line : networkDataBuffer) {
+            sb.append(line).append("\n");
+        }
+        
+        networkDataArea.setText(sb.toString());
+        networkDataArea.setScrollTop(Double.MAX_VALUE); // 自动滚动到底部
+    }
     
     private VBox createStatusBox() {
         VBox statusBox = new VBox(5);
         statusBox.setPadding(new Insets(5));
         statusBox.setStyle("-fx-border-color: lightgray; -fx-border-width: 1px; -fx-border-radius: 5px;");
         
-        HBox mainStatusBox = new HBox(20);
+        // 添加流程控制开关（移到当前状态显示前）
+        HBox processControlBox = new HBox(10);
+        processControlToggle = new ToggleButton();
+        processControlToggle.setStyle("-fx-base: #ff0000;");
+        processControlToggle.setText("流程关闭");
+        processControlToggle.setPrefWidth(100);
+        
+        // 设置开关的事件处理
+        processControlToggle.setOnAction(e -> {
+            if (processControlToggle.isSelected()) {
+                // 开启流程
+                processControlToggle.setStyle("-fx-base: #00ff00;");
+                processControlToggle.setText("流程开启");
+                startProcess();
+            } else {
+                // 关闭流程（执行重置操作）
+                processControlToggle.setStyle("-fx-base: #ff0000;");
+                processControlToggle.setText("流程关闭");
+                resetProcess();
+                processStarted.set(false);
+                currentStatus.set("空闲");
+            }
+        });
+        
+        processControlBox.getChildren().addAll(
+                new Label("流程控制: "),
+                processControlToggle
+        );
+        
+        // 使用TilePane替代HBox，使状态标签在小屏幕上可以自动换行
+        TilePane mainStatusBox = new TilePane();
+        mainStatusBox.setHgap(15);
+        mainStatusBox.setVgap(5);
+        mainStatusBox.setPrefColumns(2); // 控制每行显示的列数
+        mainStatusBox.setTileAlignment(Pos.CENTER_LEFT);
+        
+        // 添加Server启动和停止按钮
+        Button serverStartButton = new Button("启动");
+        Button serverStopButton = new Button("停止");
+        
+        // 设置按钮事件处理
+        serverStartButton.setOnAction(e -> {
+            log("[操作] 用户点击了'Server启动'按钮");
+            try {
+                // 获取当前网络配置
+                String host = "127.0.0.1";
+                String port = "8888";
+                try {
+                    host = ConfigService.getInstance().getConfigValueByKey("network.host") != null ? 
+                           ConfigService.getInstance().getConfigValueByKey("network.host") : host;
+                    port = ConfigService.getInstance().getConfigValueByKey("network.port") != null ? 
+                           ConfigService.getInstance().getConfigValueByKey("network.port") : port;
+                } catch (Exception ex) {
+                    log("[配置加载错误] 加载网络配置失败，使用默认值: " + ex.getMessage());
+                }
+                
+                // 创建网络配置
+                NetworkService.Config config = new NetworkService.Config(
+                        NetworkService.ProtocolType.TCP_SERVER, 
+                        host, 
+                        Integer.parseInt(port), 
+                        NetworkService.DataMode.ASCII
+                );
+                
+                // 启动网络服务
+                networkService = NetworkService.getInstance();
+                networkService.startService(config);
+                log("[操作结果] 已启动Server服务，监听地址: " + host + ":" + port);
+            } catch (Exception ex) {
+                log("[操作错误] 启动Server服务失败: " + ex.getMessage());
+                ex.printStackTrace();
+            }
+        });
+        
+        serverStopButton.setOnAction(e -> {
+            log("[操作] 用户点击了'Server停止'按钮");
+            try {
+                // 停止网络服务
+                if (networkService != null) {
+                    networkService.stopService();
+                    log("[操作结果] 已停止Server服务");
+                } else {
+                    log("[操作结果] Server服务未初始化");
+                }
+            } catch (Exception ex) {
+                log("[操作错误] 停止Server服务失败: " + ex.getMessage());
+                ex.printStackTrace();
+            }
+        });
+        
         mainStatusBox.getChildren().addAll(
                 new Label("当前状态: "),
                 createStatusLabel(currentStatus),
                 new Label("串口状态: "),
                 createStatusLabel(serialPortStatus),
-                new Label("PLC状态: "),
+                new Label("Server状态: "),
                 createStatusLabel(plcStatus),
-                new Label("上位机状态: "),
-                createStatusLabel(upperComputerStatus),
-                new Label("EMS状态: "),
-                createStatusLabel(emsStatus)
+                serverStartButton,
+                serverStopButton
         );
+        
+        // 使用FlowPane来放置配置按钮，使按钮在小屏幕上可以换行
+        FlowPane configButtonsBox = new FlowPane();
+        configButtonsBox.setHgap(10);
+        configButtonsBox.setVgap(5);
+        configButtonsBox.setPrefWrapLength(600); // 设置换行宽度
         
         // 添加上位机配置按钮
         upperComputerConfigButton = new Button("编辑上位机配置");
         upperComputerConfigButton.setOnAction(e -> showUpperComputerConfigDialog());
-        mainStatusBox.getChildren().add(upperComputerConfigButton);
+        configButtonsBox.getChildren().add(upperComputerConfigButton);
         
-        HBox barcodeCountBox = new HBox(20);
+        // 添加EMS配置按钮
+        emsConfigButton = new Button("编辑EMS配置");
+        emsConfigButton.setOnAction(e -> showEmsConfigDialog());
+        configButtonsBox.getChildren().add(emsConfigButton);
+        
+        // 添加网络配置按钮
+        Button networkConfigButton = new Button("网络配置");
+        networkConfigButton.setOnAction(e -> {
+            try {
+                NetworkConfigPanel configPanel = new NetworkConfigPanel();
+                configPanel.show();
+            } catch (Exception ex) {
+                log("Failed to open network config panel: " + ex.getMessage());
+            }
+        });
+        configButtonsBox.getChildren().add(networkConfigButton);
+        
+        HBox barcodeCountBox = new HBox(10);
+        barcodeCountBox.setAlignment(Pos.CENTER_LEFT);
         expectedBarcodeCountInput = new TextField("6");
         expectedBarcodeCountInput.setPrefWidth(80);
         expectedBarcodeCountInput.setAlignment(Pos.CENTER);
@@ -325,7 +592,7 @@ public class AutoProcessPanel extends BorderPane {
                 createStatusLabel(actualBarcodeCount)
         );
         
-        statusBox.getChildren().addAll(mainStatusBox, barcodeCountBox);
+        statusBox.getChildren().addAll(processControlBox, mainStatusBox, configButtonsBox, barcodeCountBox);
         return statusBox;
     }
     
@@ -673,22 +940,126 @@ public class AutoProcessPanel extends BorderPane {
         });
     }
     
-    private void simulateConnections() {
-        // 模拟连接状态（1秒后全部连接）
-        new Thread(() -> {
-            try {
-                Thread.sleep(1000);
-                Platform.runLater(() -> {
-                    serialPortStatus.set("已连接");
-                    plcStatus.set("已连接");
-                    upperComputerStatus.set("已连接");
-                    emsStatus.set("已连接");
-                    log("所有设备连接成功");
-                });
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+    /**
+     * 显示EMS配置对话框
+     */
+    private void showEmsConfigDialog() {
+        // 创建对话框
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("编辑EMS配置");
+        dialog.setHeaderText("请输入EMS系统的API URL");
+        
+        // 设置对话框按钮
+        ButtonType saveButtonType = new ButtonType("保存", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+        
+        // 创建表单布局
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20, 150, 10, 10));
+        
+        // 创建URL输入字段
+        TextField urlTextField = new TextField();
+        
+        // 从配置服务加载现有配置
+        try {
+            String savedUrl = ConfigService.getInstance().getConfigValueByKey(CONFIG_KEY_EMS_URL);
+            urlTextField.setText(savedUrl != null ? savedUrl : DEFAULT_EMS_URL);
+        } catch (Exception e) {
+            log("[配置加载错误] 从EMS配置服务加载配置失败: " + e.getMessage());
+            // 使用默认值
+            urlTextField.setText(DEFAULT_EMS_URL);
+        }
+        
+        // 添加标签和输入字段到网格
+        grid.add(new Label("EMS API URL:"), 0, 0);
+        grid.add(urlTextField, 1, 0);
+        
+        // 设置对话框内容
+        dialog.getDialogPane().setContent(grid);
+        
+        // 验证输入
+        Button saveButton = (Button) dialog.getDialogPane().lookupButton(saveButtonType);
+        saveButton.disableProperty().bind(
+            Bindings.createBooleanBinding(() -> {
+                String url = urlTextField.getText().trim();
+                
+                // 简化的URL验证
+                boolean validUrl = !url.isEmpty() && (url.startsWith("http://") || url.startsWith("https://"));
+                
+                return !validUrl;
+            }, urlTextField.textProperty())
+        );
+        
+        // 显示对话框并处理结果
+        dialog.showAndWait().ifPresent(result -> {
+            if (result == saveButtonType) {
+                String url = urlTextField.getText().trim();
+                
+                try {
+                    // 保存EMS URL配置
+                    saveEmsConfig(CONFIG_KEY_EMS_URL, url, "EMS系统API地址", "STRING");
+                    
+                    log("[配置更新] 成功保存EMS配置 - URL: " + url);
+                    showSuccessMessage("EMS配置保存成功");
+                } catch (Exception e) {
+                    log("[配置保存错误] 保存EMS配置失败: " + e.getMessage());
+                    e.printStackTrace();
+                    showSuccessMessage("EMS配置保存失败: " + e.getMessage());
+                }
             }
-        }).start();
+        });
+    }
+    
+    /**
+     * 保存EMS配置到配置服务
+     */
+    private void saveEmsConfig(String configKey, String configValue, String description, String dataType) {
+        try {
+            // 先检查配置项是否已存在
+            String existingValue = ConfigService.getInstance().getConfigValueByKey(configKey);
+            ConfigItem configItem = null;
+            
+            if (existingValue != null) {
+                // 如果已存在，获取现有配置项
+                try {
+                    List<ConfigItem> allConfigs = DatabaseManager.getAllConfigItems();
+                    for (ConfigItem item : allConfigs) {
+                        if (item.getConfigKey().equals(configKey)) {
+                            configItem = item;
+                            configItem.setConfigValue(configValue); // 更新值
+                            break;
+                        }
+                    }
+                } catch (SQLException e) {
+                    // 如果获取现有配置项失败，创建新的配置项
+                    log("[配置检查] 获取现有EMS配置项失败: " + e.getMessage() + ", 将创建新配置项");
+                    configItem = new ConfigItem(
+                        configKey,
+                        configValue,
+                        description,
+                        dataType,
+                        true // 设置为必填配置项
+                    );
+                }
+            } else {
+                // 如果不存在，创建新配置项
+                configItem = new ConfigItem(
+                    configKey,
+                    configValue,
+                    description,
+                    dataType,
+                    true // 设置为必填配置项
+                );
+            }
+            
+            ConfigService.getInstance().saveConfigItem(configItem);
+            log("[配置保存] 已保存EMS配置 - 键: " + configKey + ", 值: " + configValue);
+        } catch (Exception e) {
+            log("[配置保存错误] 保存EMS配置失败: " + e.getMessage());
+            throw new RuntimeException("保存EMS配置失败", e);
+        }
     }
     
     private void startProcess() {
@@ -801,30 +1172,35 @@ public class AutoProcessPanel extends BorderPane {
         
         log("[操作结果] 开始监控串口: " + selectedPort);
         
-        // 模拟串口监控线程
-        new Thread(() -> {
-            while (isMonitoringComPort) {
-                try {
-                    // 模拟每3-5秒随机接收到一个条码
-                    Thread.sleep(3000 + random.nextInt(2000));
-                    
-                    if (isMonitoringComPort) { // 再次检查，防止线程启动后立即被停止的情况
-                        String randomBarcode = "AUTO-" + System.currentTimeMillis() + "-" + random.nextInt(1000);
-                        
-                        Platform.runLater(() -> {
-                            BarcodeData barcodeData = new BarcodeData(deviceId, randomBarcode, selectedPort);
-                            barcodeDataList.add(barcodeData);
-                            currentBarcodes.add(randomBarcode);
-                            log("[串口数据] 从串口" + selectedPort + "自动读取到条码: " + randomBarcode);
-                            log("[数据状态] 当前条码数量: " + barcodeDataList.size() + ", 预期条码数量: " + expectedBarcodeCount.get());
-                        });
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
+        // 执行COM口有效性检查
+        log("[COM口检查] 正在验证串口有效性...");
+        try {
+            // 使用默认参数初始化串口进行验证
+            int baudRate = 9600;
+            int dataBits = 8;
+            int stopBits = 1;
+            int parity = 0; // 无校验
+            
+            // 检查串口是否有效
+            boolean portValid = serialPortService.initSerialPort("monitor_device", selectedPort, 
+                                                              baudRate, dataBits, stopBits, parity);
+            
+            if (portValid) {
+                log("[COM口检查] 串口" + selectedPort + " 验证成功");
+                serialPortStatus.set("已连接");
+                log("[提示] 串口监控已启动，请使用'模拟COM口数据'按钮手动输入数据");
+            } else {
+                log("[COM口检查] 串口" + selectedPort + " 验证失败");
+                serialPortStatus.set("连接失败");
+                log("[提示] 请检查串口连接或尝试其他COM端口");
             }
-        }).start();
+            
+            // 验证完成后关闭测试连接（实际监控由事件监听器处理）
+            serialPortService.closeSerialPort("monitor_device");
+        } catch (Exception e) {
+            log("[COM口检查] 验证过程发生错误: " + e.getMessage());
+            serialPortStatus.set("检查错误");
+        }
     }
     
     private void stopComPortMonitoring() {
@@ -994,10 +1370,6 @@ public class AutoProcessPanel extends BorderPane {
     }
     
     private void log(String message) {
-        // 使用统一的Logger类进行日志记录
-        Logger.getInstance().info(message);
-        
-        // 同时在界面上显示日志
         String timestamp = LocalDateTime.now().format(formatter);
         String logMessage = "[" + timestamp + "] " + message;
         
@@ -1022,6 +1394,72 @@ public class AutoProcessPanel extends BorderPane {
     }
     
     private boolean isInitialized = false;
+    
+    /**
+     * 显示模拟COM口数据的输入弹窗
+     */
+    private void showComDataInputDialog() {
+        if (!isMonitoringComPort) {
+            log("[操作结果] 请先开始串口监控");
+            return;
+        }
+        
+        String selectedPort = comPortComboBox.getValue();
+        
+        // 创建对话框
+        Dialog<String> dialog = new Dialog<>();
+        dialog.setTitle("模拟COM口数据");
+        dialog.setHeaderText("请输入要模拟的COM口数据 (当前端口: " + selectedPort + ")");
+        
+        // 设置对话框按钮
+        ButtonType confirmButtonType = new ButtonType("确认", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(confirmButtonType, ButtonType.CANCEL);
+        
+        // 创建输入框
+        TextField dataTextField = new TextField();
+        dataTextField.setPromptText("输入条码数据，例如: BAR-123456");
+        
+        // 添加输入框到对话框
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20, 150, 10, 10));
+        
+        grid.add(new Label("条码数据:"), 0, 0);
+        grid.add(dataTextField, 1, 0);
+        
+        dialog.getDialogPane().setContent(grid);
+        
+        // 请求焦点到输入框
+        Platform.runLater(() -> dataTextField.requestFocus());
+        
+        // 设置结果转换器
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == confirmButtonType) {
+                return dataTextField.getText();
+            }
+            return null;
+        });
+        
+        // 显示对话框并处理结果
+        Optional<String> result = dialog.showAndWait();
+        result.ifPresent(inputData -> {
+            if (inputData != null && !inputData.trim().isEmpty()) {
+                String barcode = inputData.trim();
+                
+                // 模拟COM口数据接收
+                Platform.runLater(() -> {
+                    BarcodeData barcodeData = new BarcodeData(deviceId, barcode, selectedPort);
+                    barcodeDataList.add(barcodeData);
+                    currentBarcodes.add(barcode);
+                    log("[串口数据] 从串口" + selectedPort + "模拟接收到条码: " + barcode);
+                    log("[数据状态] 当前条码数量: " + barcodeDataList.size() + ", 预期条码数量: " + expectedBarcodeCount.get());
+                });
+            } else {
+                log("[操作结果] 输入的COM口数据不能为空");
+            }
+        });
+    }
     
     // 内部类：条码数据
     public static class BarcodeData {

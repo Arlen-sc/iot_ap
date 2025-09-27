@@ -4,6 +4,7 @@ import com.iot.plc.model.BarcodeData;
 import com.iot.plc.model.DeviceResult;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.iot.plc.service.UpperComputerService;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;

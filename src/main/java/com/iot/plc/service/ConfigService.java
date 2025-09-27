@@ -79,6 +79,29 @@ public class ConfigService {
     public void saveConfigItem(ConfigItem configItem) {
         try {
             validateConfigItem(configItem);
+            
+            // 先尝试查找是否已存在相同config_key的配置项
+            ConfigItem existingItem = null;
+            try {
+                List<ConfigItem> allItems = DatabaseManager.getAllConfigItems();
+                for (ConfigItem item : allItems) {
+                    if (item.getConfigKey().equals(configItem.getConfigKey())) {
+                        existingItem = item;
+                        break;
+                    }
+                }
+            } catch (SQLException e) {
+                logger.warn("查询配置项时发生异常: " + e.getMessage());
+            }
+            
+            // 如果找到已存在的配置项，则更新它
+            if (existingItem != null) {
+                configItem.setId(existingItem.getId());
+                logger.debug("找到已存在的配置项，将执行更新操作，配置键: " + configItem.getConfigKey() + ", ID: " + existingItem.getId());
+            } else {
+                logger.debug("未找到已存在的配置项，将执行插入操作，配置键: " + configItem.getConfigKey());
+            }
+            
             DatabaseManager.saveConfigItem(configItem);
             logger.info("配置项保存成功，配置键: " + configItem.getConfigKey());
         } catch (SQLException e) {

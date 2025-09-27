@@ -124,6 +124,8 @@ public class NetworkConfigPanel extends VBox {
      * 显示配置面板
      */
     public void show() {
+        // 每次显示前重新加载配置
+        loadConfig();
         stage.show();
     }
     
@@ -207,8 +209,9 @@ public class NetworkConfigPanel extends VBox {
     
     /**
      * 保存配置到NetworkService
+     * @throws Exception 当保存到配置管理系统失败时抛出异常
      */
-    private void saveToService() {
+    private void saveToService() throws Exception {
         NetworkService.getInstance().startService(config);
         // 同时保存到配置管理系统
         saveToConfigService();
@@ -216,34 +219,75 @@ public class NetworkConfigPanel extends VBox {
     
     /**
      * 保存配置到配置管理系统
+     * @throws Exception 当保存失败时抛出异常
      */
-    private void saveToConfigService() {
+    private void saveToConfigService() throws Exception {
         try {
             ConfigService configService = ConfigService.getInstance();
             
-            // 保存协议类型
-            ConfigItem protocolItem = new ConfigItem();
-            protocolItem.setConfigKey("network.protocol");
-            protocolItem.setConfigValue(config.getProtocolType().name());
-            protocolItem.setDataType("STRING");
-            protocolItem.setDescription("网络协议类型");
-            configService.saveConfigItem(protocolItem);
+            // 验证配置对象
+            if (config == null) {
+                throw new IllegalStateException("配置对象不能为空");
+            }
+            if (config.getProtocolType() == null) {
+                throw new IllegalStateException("协议类型不能为空");
+            }
+            if (config.getHost() == null || config.getHost().trim().isEmpty()) {
+                throw new IllegalStateException("主机地址不能为空");
+            }
             
-            // 保存主机地址
-            ConfigItem hostItem = new ConfigItem();
-            hostItem.setConfigKey("network.host");
-            hostItem.setConfigValue(config.getHost());
-            hostItem.setDataType("STRING");
-            hostItem.setDescription("主机地址");
-            configService.saveConfigItem(hostItem);
+            logger.debug("开始保存网络配置到配置管理系统");
+            logger.debug("协议类型: " + config.getProtocolType().name());
+            logger.debug("主机地址: " + config.getHost());
+            logger.debug("端口号: " + config.getPort());
             
-            // 保存端口号
-            ConfigItem portItem = new ConfigItem();
-            portItem.setConfigKey("network.port");
-            portItem.setConfigValue(String.valueOf(config.getPort()));
-            portItem.setDataType("INTEGER");
-            portItem.setDescription("端口号");
-            configService.saveConfigItem(portItem);
+            // 先尝试查找是否已存在配置项
+            try {
+                String existingProtocol = configService.getConfigValueByKey("network.protocol");
+                String existingHost = configService.getConfigValueByKey("network.host");
+                String existingPort = configService.getConfigValueByKey("network.port");
+                
+                logger.debug("现有配置 - 协议: " + existingProtocol + ", 主机: " + existingHost + ", 端口: " + existingPort);
+            } catch (Exception e) {
+                logger.warn("查询现有配置时发生异常: " + e.getMessage());
+            }
+            
+            try {
+                // 保存协议类型
+                ConfigItem protocolItem = new ConfigItem();
+                protocolItem.setConfigKey("network.protocol");
+                protocolItem.setConfigValue(config.getProtocolType().name());
+                protocolItem.setDataType("STRING");
+                protocolItem.setDescription("网络协议类型");
+                protocolItem.setRequired(true);
+                configService.saveConfigItem(protocolItem);
+                logger.debug("成功保存协议类型配置");
+                
+                // 保存主机地址
+                ConfigItem hostItem = new ConfigItem();
+                hostItem.setConfigKey("network.host");
+                hostItem.setConfigValue(config.getHost());
+                hostItem.setDataType("STRING");
+                hostItem.setDescription("主机地址");
+                hostItem.setRequired(true);
+                configService.saveConfigItem(hostItem);
+                logger.debug("成功保存主机地址配置");
+                
+                // 保存端口号
+                ConfigItem portItem = new ConfigItem();
+                portItem.setConfigKey("network.port");
+                portItem.setConfigValue(String.valueOf(config.getPort()));
+                portItem.setDataType("INTEGER");
+                portItem.setDescription("端口号");
+                portItem.setRequired(true);
+                configService.saveConfigItem(portItem);
+                logger.debug("成功保存端口号配置");
+                
+                logger.info("网络配置保存到配置管理系统成功");
+            } catch (Exception e) {
+                logger.error("保存配置到配置管理系统失败: " + e.getMessage(), e);
+                throw e;
+            }
             
             // 保存数据模式
             ConfigItem dataModeItem = new ConfigItem();
@@ -256,6 +300,7 @@ public class NetworkConfigPanel extends VBox {
             logger.info("网络配置已保存到配置管理系统");
         } catch (Exception e) {
             logger.error("保存配置到配置管理系统失败: " + e.getMessage());
+            throw e; // 重新抛出异常，让上层知道保存失败
         }
     }
     
