@@ -64,10 +64,10 @@ public class AutoProcessPanel extends BorderPane {
     private StringProperty currentStatus = new SimpleStringProperty("空闲");
     private StringProperty serialPortStatus = new SimpleStringProperty("未连接");
     private StringProperty plcStatus = new SimpleStringProperty("未连接");
-    private StringProperty upperComputerStatus = new SimpleStringProperty("未连接");
-    private StringProperty emsStatus = new SimpleStringProperty("未连接");
     private StringProperty expectedBarcodeCount = new SimpleStringProperty("6");
     private StringProperty actualBarcodeCount = new SimpleStringProperty("0");
+    private StringProperty connectionStatus = new SimpleStringProperty("0个连接"); // 连接状态属性
+    private int connectedClients = 0; // 连接的客户端数量
     private static final String CONFIG_KEY_EXPECTED_BARCODE_COUNT = "expected_barcode_count";
     
     // 数据管理
@@ -369,9 +369,11 @@ public class AutoProcessPanel extends BorderPane {
     // 配置UI组件
     private Button upperComputerConfigButton;
     private Button emsConfigButton;
+    private Button networkConfigButton; // 网络配置按钮
     
     // 流程控制开关
     private ToggleButton processControlToggle;
+    private ToggleButton serverToggleButton; // Server控制按钮（合并启动和停止功能）
     
     // 初始化网络服务
     private void initializeNetworkService() {
@@ -391,13 +393,42 @@ public class AutoProcessPanel extends BorderPane {
             public void onConnectionStatusChanged(boolean connected) {
                 // 在JavaFX应用线程中更新UI
                 Platform.runLater(() -> {
-                    String status = connected ? "已连接" : "未连接";
+                    String status = connected ? "开启" : "关闭";
                     log("[网络状态] " + status);
                     plcStatus.set(status); // 更新Server状态显示
+                    
+                    // 更新连接状态
+                    // 不再使用简化实现，而是从NetworkService获取实际连接数
+                    int currentConnections = networkService.getConnectedClientCount();
+                    connectionStatus.set(currentConnections + "个连接");
+                    
+                    // 更新Server控制按钮状态
+                    if (serverToggleButton != null) {
+                        serverToggleButton.setSelected(connected);
+                        serverToggleButton.setText(connected ? "关闭" : "开启");
+                    }
+                });
+            }
+            
+            @Override
+            public void onLogReceived(String logMessage) {
+                // 在JavaFX应用线程中更新UI日志区域
+                Platform.runLater(() -> {
+                    log(logMessage);
+                });
+            }
+            
+            @Override
+            public void onConnectionCountChanged(int count) {
+                // 在JavaFX应用线程中更新连接数显示
+                Platform.runLater(() -> {
+                    connectionStatus.set(count + "个连接");
                 });
             }
         });
     }
+    
+
     
     // 添加网络数据到显示区域，并保持只显示100条
     private void addNetworkData(String data) {
@@ -427,7 +458,11 @@ public class AutoProcessPanel extends BorderPane {
         statusBox.setPadding(new Insets(5));
         statusBox.setStyle("-fx-border-color: lightgray; -fx-border-width: 1px; -fx-border-radius: 5px;");
         
-        // 添加流程控制开关（移到当前状态显示前）
+        // 创建一个VBox容器用于放置流程控制和网络配置相关组件
+        VBox processNetworkSection = new VBox(5);
+        processNetworkSection.setPadding(new Insets(0));
+        
+        // 添加流程控制开关
         HBox processControlBox = new HBox(10);
         processControlToggle = new ToggleButton();
         processControlToggle.setStyle("-fx-base: #ff0000;");
@@ -452,9 +487,109 @@ public class AutoProcessPanel extends BorderPane {
         });
         
         processControlBox.getChildren().addAll(
-                new Label("流程控制: "),
-                processControlToggle
+                // new Label("流程控制: "),
+                processControlToggle,
+                new Label("当前状态: "),
+                createStatusLabel(currentStatus)
         );
+        
+        // 创建一个HBox来放置网络配置、Server开关、Server状态和连接数，确保它们始终在同一行显示且靠左对齐
+        HBox networkConfigRow = new HBox(10); // 设置组件间距为10
+        networkConfigRow.setAlignment(Pos.CENTER_LEFT);
+        networkConfigRow.setPadding(new Insets(0)); // 移除内边距
+        networkConfigRow.setFillHeight(true); // 填充高度
+        HBox.setHgrow(networkConfigRow, Priority.ALWAYS); // 水平方向占据全部可用空间
+        
+        // 添加网络配置按钮
+        networkConfigButton = new Button("网络配置");
+        networkConfigButton.setOnAction(e -> {
+            try {
+                NetworkConfigPanel configPanel = new NetworkConfigPanel();
+                configPanel.show();
+            } catch (Exception ex) {
+                log("Failed to open network config panel: " + ex.getMessage());
+            }
+        });
+        
+        // 添加Server控制按钮（合并启动和停止按钮）
+        serverToggleButton = new ToggleButton("开启");
+        serverToggleButton.setPrefWidth(80);
+        
+        // 设置按钮事件处理
+        serverToggleButton.setOnAction(e -> {
+            if (serverToggleButton.isSelected()) {
+                // 启动Server服务
+                log("[操作] 用户点击了'Server开启'按钮");
+                try {
+                    // 获取当前网络配置
+                    String host = "127.0.0.1";
+                    String port = "8888";
+                    try {
+                        host = ConfigService.getInstance().getConfigValueByKey("network.host") != null ? 
+                               ConfigService.getInstance().getConfigValueByKey("network.host") : host;
+                        port = ConfigService.getInstance().getConfigValueByKey("network.port") != null ? 
+                               ConfigService.getInstance().getConfigValueByKey("network.port") : port;
+                    } catch (Exception ex) {
+                        log("[配置加载错误] 加载网络配置失败，使用默认值: " + ex.getMessage());
+                    }
+                    
+                    // 创建网络配置
+                    NetworkService.Config config = new NetworkService.Config(
+                            NetworkService.ProtocolType.TCP_SERVER, 
+                            host, 
+                            Integer.parseInt(port), 
+                            NetworkService.DataMode.ASCII
+                    );
+                    
+                    // 启动网络服务
+                    networkService.startService(config);
+                    log("[操作结果] 已启动Server服务，监听地址: " + host + ":" + port);
+                    serverToggleButton.setText("关闭");
+                } catch (Exception ex) {
+                    log("[操作错误] 启动Server服务失败: " + ex.getMessage());
+                    ex.printStackTrace();
+                    serverToggleButton.setSelected(false);
+                    serverToggleButton.setText("开启");
+                }
+            } else {
+                // 停止Server服务
+                log("[操作] 用户点击了'Server关闭'按钮");
+                try {
+                    // 停止网络服务
+                    if (networkService != null) {
+                        networkService.stopService();
+                        log("[操作结果] 已停止Server服务");
+                    } else {
+                        log("[操作结果] Server服务未初始化");
+                    }
+                    serverToggleButton.setText("开启");
+                } catch (Exception ex) {
+                    log("[操作错误] 停止Server服务失败: " + ex.getMessage());
+                    ex.printStackTrace();
+                    serverToggleButton.setSelected(true);
+                    serverToggleButton.setText("关闭");
+                }
+            }
+        });
+        
+        // 检查初始状态并更新按钮显示
+        if (networkService != null && networkService.isRunning()) {
+            serverToggleButton.setSelected(true);
+            serverToggleButton.setText("关闭");
+        }
+        
+        // 将所有网络配置相关组件添加到同一行
+        networkConfigRow.getChildren().addAll(
+                networkConfigButton,
+                serverToggleButton,
+                new Label("Server状态: "),
+                createStatusLabel(plcStatus),
+                new Label("连接数: "),
+                createStatusLabel(connectionStatus)
+        );
+        
+        // 将流程控制和网络配置行添加到流程控制区域
+        processNetworkSection.getChildren().addAll(processControlBox, networkConfigRow);
         
         // 使用TilePane替代HBox，使状态标签在小屏幕上可以自动换行
         TilePane mainStatusBox = new TilePane();
@@ -463,69 +598,10 @@ public class AutoProcessPanel extends BorderPane {
         mainStatusBox.setPrefColumns(2); // 控制每行显示的列数
         mainStatusBox.setTileAlignment(Pos.CENTER_LEFT);
         
-        // 添加Server启动和停止按钮
-        Button serverStartButton = new Button("启动");
-        Button serverStopButton = new Button("停止");
-        
-        // 设置按钮事件处理
-        serverStartButton.setOnAction(e -> {
-            log("[操作] 用户点击了'Server启动'按钮");
-            try {
-                // 获取当前网络配置
-                String host = "127.0.0.1";
-                String port = "8888";
-                try {
-                    host = ConfigService.getInstance().getConfigValueByKey("network.host") != null ? 
-                           ConfigService.getInstance().getConfigValueByKey("network.host") : host;
-                    port = ConfigService.getInstance().getConfigValueByKey("network.port") != null ? 
-                           ConfigService.getInstance().getConfigValueByKey("network.port") : port;
-                } catch (Exception ex) {
-                    log("[配置加载错误] 加载网络配置失败，使用默认值: " + ex.getMessage());
-                }
-                
-                // 创建网络配置
-                NetworkService.Config config = new NetworkService.Config(
-                        NetworkService.ProtocolType.TCP_SERVER, 
-                        host, 
-                        Integer.parseInt(port), 
-                        NetworkService.DataMode.ASCII
-                );
-                
-                // 启动网络服务
-                networkService = NetworkService.getInstance();
-                networkService.startService(config);
-                log("[操作结果] 已启动Server服务，监听地址: " + host + ":" + port);
-            } catch (Exception ex) {
-                log("[操作错误] 启动Server服务失败: " + ex.getMessage());
-                ex.printStackTrace();
-            }
-        });
-        
-        serverStopButton.setOnAction(e -> {
-            log("[操作] 用户点击了'Server停止'按钮");
-            try {
-                // 停止网络服务
-                if (networkService != null) {
-                    networkService.stopService();
-                    log("[操作结果] 已停止Server服务");
-                } else {
-                    log("[操作结果] Server服务未初始化");
-                }
-            } catch (Exception ex) {
-                log("[操作错误] 停止Server服务失败: " + ex.getMessage());
-                ex.printStackTrace();
-            }
-        });
-        
+        // 添加当前状态和串口状态
         mainStatusBox.getChildren().addAll(
-                new Label("当前状态: "),
-                createStatusLabel(currentStatus),
                 new Label("串口状态: "),
-                createStatusLabel(serialPortStatus),
-                new Label("Server状态: "),
-                createStatusLabel(plcStatus),
-                serverStartButton,
-                serverStopButton
+                createStatusLabel(serialPortStatus)
         );
         
         // 使用FlowPane来放置配置按钮，使按钮在小屏幕上可以换行
@@ -543,18 +619,6 @@ public class AutoProcessPanel extends BorderPane {
         emsConfigButton = new Button("编辑EMS配置");
         emsConfigButton.setOnAction(e -> showEmsConfigDialog());
         configButtonsBox.getChildren().add(emsConfigButton);
-        
-        // 添加网络配置按钮
-        Button networkConfigButton = new Button("网络配置");
-        networkConfigButton.setOnAction(e -> {
-            try {
-                NetworkConfigPanel configPanel = new NetworkConfigPanel();
-                configPanel.show();
-            } catch (Exception ex) {
-                log("Failed to open network config panel: " + ex.getMessage());
-            }
-        });
-        configButtonsBox.getChildren().add(networkConfigButton);
         
         HBox barcodeCountBox = new HBox(10);
         barcodeCountBox.setAlignment(Pos.CENTER_LEFT);
@@ -592,7 +656,7 @@ public class AutoProcessPanel extends BorderPane {
                 createStatusLabel(actualBarcodeCount)
         );
         
-        statusBox.getChildren().addAll(processControlBox, mainStatusBox, configButtonsBox, barcodeCountBox);
+        statusBox.getChildren().addAll(processNetworkSection, mainStatusBox, configButtonsBox, barcodeCountBox);
         return statusBox;
     }
     

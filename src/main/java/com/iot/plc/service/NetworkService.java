@@ -137,26 +137,31 @@ public class NetworkService {
     private void startTcpServer() {
         executorService.submit(() -> {
             try {
+                logger.info("[TCP Server] 开始创建ServerSocket，端口: " + currentConfig.getPort());
                 tcpServerSocket = new ServerSocket(currentConfig.getPort());
-                logger.info("TCP server started on port: " + currentConfig.getPort());
+                logger.info("[TCP Server] TCP server started successfully on port: " + currentConfig.getPort());
+                
+                // 服务成功启动后立即通知状态为已连接
+                logger.info("[TCP Server] 通知连接状态为已连接");
+                notifyConnectionStatus(true);
                 
                 while (isRunning) {
                     try {
+                        logger.info("[TCP Server] 等待客户端连接...");
                         Socket clientSocket = tcpServerSocket.accept();
-                        logger.info("Client connected: " + clientSocket.getInetAddress().getHostAddress());
-                        notifyConnectionStatus(true);
+                        logger.info("[TCP Server] Client connected: " + clientSocket.getInetAddress().getHostAddress());
                         
                         // 为每个客户端创建一个线程处理数据
                         executorService.submit(() -> handleTcpConnection(clientSocket));
                     } catch (IOException e) {
                         if (isRunning) { // 只有在服务运行时才记录错误
-                            logger.warn("Error accepting TCP connection: " + e.getMessage());
-                            notifyConnectionStatus(false);
+                            logger.warn("[TCP Server] Error accepting TCP connection: " + e.getMessage());
+                            // 注意：不要在这里设置为未连接，因为服务器仍然在运行中
                         }
                     }
                 }
             } catch (IOException e) {
-                logger.error("Failed to start TCP server: " + e.getMessage(), e);
+                logger.error("[TCP Server] Failed to start TCP server: " + e.getMessage(), e);
                 notifyConnectionStatus(false);
             }
         });
