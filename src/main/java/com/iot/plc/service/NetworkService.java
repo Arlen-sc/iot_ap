@@ -21,6 +21,14 @@ public class NetworkService {
     
     // 当前配置
     private Config currentConfig;
+    private int connectedClientCount = 0; // 实际连接的客户端数量
+
+    /**
+     * 获取当前连接的客户端数量
+     */
+    public int getConnectedClientCount() {
+        return connectedClientCount;
+    }
     
     // 连接对象
     private ServerSocket tcpServerSocket;
@@ -58,10 +66,12 @@ public class NetworkService {
         public void setDataMode(DataMode dataMode) { this.dataMode = dataMode; }
     }
     
-    // 数据监听器接口
+    // 网络监听器接口
     public interface NetworkListener {
         void onDataReceived(String data);
         void onConnectionStatusChanged(boolean connected);
+        void onLogReceived(String logMessage);
+        void onConnectionCountChanged(int count); // 新增连接数变化通知
     }
     
     private NetworkService() {
@@ -137,32 +147,48 @@ public class NetworkService {
     private void startTcpServer() {
         executorService.submit(() -> {
             try {
-                logger.info("[TCP Server] 开始创建ServerSocket，端口: " + currentConfig.getPort());
+                String logMsg = "[TCP Server] 开始创建ServerSocket，端口: " + currentConfig.getPort();
+                logger.info(logMsg);
+                notifyLogReceived(logMsg);
+                
                 tcpServerSocket = new ServerSocket(currentConfig.getPort());
-                logger.info("[TCP Server] TCP server started successfully on port: " + currentConfig.getPort());
+                logMsg = "[TCP Server] TCP server started successfully on port: " + currentConfig.getPort();
+                logger.info(logMsg);
+                notifyLogReceived(logMsg);
                 
                 // 服务成功启动后立即通知状态为已连接
-                logger.info("[TCP Server] 通知连接状态为已连接");
+                logMsg = "[TCP Server] 通知连接状态为已连接";
+                logger.info(logMsg);
+                notifyLogReceived(logMsg);
                 notifyConnectionStatus(true);
                 
                 while (isRunning) {
                     try {
-                        logger.info("[TCP Server] 等待客户端连接...");
+                        logMsg = "[TCP Server] 等待客户端连接...";
+                        logger.info(logMsg);
+                        notifyLogReceived(logMsg); // 将等待客户端连接的日志传递给UI
+                        
                         Socket clientSocket = tcpServerSocket.accept();
-                        logger.info("[TCP Server] Client connected: " + clientSocket.getInetAddress().getHostAddress());
+                        logMsg = "[TCP Server] Client connected: " + clientSocket.getInetAddress().getHostAddress();
+                        logger.info(logMsg);
+                        notifyLogReceived(logMsg);
                         
                         // 为每个客户端创建一个线程处理数据
                         executorService.submit(() -> handleTcpConnection(clientSocket));
                     } catch (IOException e) {
                         if (isRunning) { // 只有在服务运行时才记录错误
-                            logger.warn("[TCP Server] Error accepting TCP connection: " + e.getMessage());
+                            logMsg = "[TCP Server] Error accepting TCP connection: " + e.getMessage();
+                            logger.warn(logMsg);
+                            notifyLogReceived(logMsg);
                             // 注意：不要在这里设置为未连接，因为服务器仍然在运行中
                         }
                     }
                 }
             } catch (IOException e) {
-                logger.error("[TCP Server] Failed to start TCP server: " + e.getMessage(), e);
-                notifyConnectionStatus(false);
+                String logMsg = "[TCP Server] Failed to start TCP server: " + e.getMessage();
+                logger.error(logMsg, e);
+                notifyLogReceived(logMsg);
+    
             }
         });
     }
@@ -179,7 +205,7 @@ public class NetworkService {
                 handleTcpConnection(tcpClientSocket);
             } catch (IOException e) {
                 logger.error("Failed to connect to TCP server: " + e.getMessage(), e);
-                notifyConnectionStatus(false);
+    
             }
         });
     }
@@ -211,7 +237,7 @@ public class NetworkService {
                 }
             } catch (SocketException e) {
                 logger.error("Failed to start UDP server: " + e.getMessage(), e);
-                notifyConnectionStatus(false);
+    
             }
         });
     }
@@ -220,6 +246,15 @@ public class NetworkService {
      * 处理TCP连接
      */
     private void handleTcpConnection(Socket socket) {
+        // 增加连接数计数
+        synchronized(this) {
+            connectedClientCount++;
+            String logMsg = "[TCP Connection] 当前连接数: " + connectedClientCount;
+            logger.info(logMsg);
+            notifyLogReceived(logMsg);
+            notifyConnectionCountChanged(connectedClientCount); // 通知连接数变化
+        }
+        
         try {
             byte[] buffer = new byte[1024];
             int bytesRead;
@@ -234,6 +269,14 @@ public class NetworkService {
                 logger.warn("Error handling TCP connection: " + e.getMessage());
             }
         } finally {
+            // 连接关闭时减少计数
+            synchronized(this) {
+                connectedClientCount = Math.max(0, connectedClientCount - 1);
+                String logMsg = "[TCP Connection] 客户端断开连接，当前连接数: " + connectedClientCount;
+                logger.info(logMsg);
+                notifyLogReceived(logMsg);
+                notifyConnectionCountChanged(connectedClientCount); // 通知连接数变化
+            }
             try {
                 if (!socket.isClosed()) {
                     socket.close();
@@ -241,7 +284,6 @@ public class NetworkService {
             } catch (IOException e) {
                 logger.warn("Failed to close TCP socket: " + e.getMessage());
             }
-            notifyConnectionStatus(false);
         }
     }
     
@@ -341,6 +383,34 @@ public class NetworkService {
     private void notifyConnectionStatus(boolean connected) {
         if (listener != null) {
             listener.onConnectionStatusChanged(connected);
+        }
+    }
+    
+    /**
+     * 通知日志消息
+     */
+    private void notifyLogReceived(String logMessage) {
+        if (listener != null && listener instanceof NetworkListener) {
+            try {
+                // 使用反射检查是否实现了onLogReceived方法
+                listener.getClass().getMethod("onLogReceived", String.class).invoke(listener, logMessage);
+            } catch (Exception e) {
+                // 如果监听器没有实现这个方法，就忽略
+            }
+        }
+    }
+    
+    /**
+     * 通知连接数变化
+     */
+    private void notifyConnectionCountChanged(int count) {
+        if (listener != null && listener instanceof NetworkListener) {
+            try {
+                // 使用反射检查是否实现了onConnectionCountChanged方法
+                ((NetworkListener)listener).onConnectionCountChanged(count);
+            } catch (Exception e) {
+                // 如果监听器没有实现这个方法，就忽略
+            }
         }
     }
     
