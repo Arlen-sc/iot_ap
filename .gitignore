@@ -25,3 +25,7 @@ plc_tasks.db
 run*.bat
 compile*.bat
 QUICK_START.bat
+java/**
+target/**
+java/jdk1.8.0_281/jre/lib/fontconfig.bfc
+target/classes/com/iot/plc/logger/Logger.class

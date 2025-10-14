@@ -139,6 +139,45 @@
                     </execution>
                 </executions>
             </plugin>
+            
+            <!-- Launch4j plugin for creating Windows executable -->
+            <plugin>
+                <groupId>com.akathist.maven.plugins.launch4j</groupId>
+                <artifactId>launch4j-maven-plugin</artifactId>
+                <version>2.1.3</version>
+                <executions>
+                    <execution>
+                        <id>l4j-clui</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>launch4j</goal>
+                        </goals>
+                        <configuration>
+                            <headerType>gui</headerType>
+                            <outfile>target/PLCManager.exe</outfile>
+                            <jar>target/iot-plc-manager-1.0-SNAPSHOT.jar</jar>
+                            <errTitle>PLC任务管理系统错误</errTitle>
+                            <cmdLine></cmdLine>
+                            <chdir>.</chdir>
+                            <priority>normal</priority>
+                            <downloadUrl>https://java.com/download</downloadUrl>
+                            <supportUrl></supportUrl>
+                            <customProcName>false</customProcName>
+                            <stayAlive>false</stayAlive>
+                            <manifest></manifest>
+                            <icon></icon>
+                            <jre>
+                                <path>java/jdk1.8.0_281</path>
+                                <bundledJre64Bit>true</bundledJre64Bit>
+                                <bundledJreAsFallback>false</bundledJreAsFallback>
+                                <minVersion>1.8.0_281</minVersion>
+                                <jdkPreference>jreOnly</jdkPreference>
+                                <runtimeBits>64/32</runtimeBits>
+                            </jre>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>

@@ -15,31 +15,61 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 
 /**
- * 网络接收模块配置面板
- * 用于配置TCP服务端、TCP客户端和UDP协议参数
+ * 网络配置面板
+ * 用于配置TCP服务端、TCP客户端和UDP协议参数，支持烧录机和扫码机配置
  */
 public class NetworkConfigPanel extends VBox {
     // 使用我们统一的Logger类
     private static final Logger logger = Logger.getInstance();
     private Stage stage;
-    private NetworkService.Config config;
+    private NetworkService.Config config; // 统一使用NetworkService.Config
+    private ConfigType configType;
+    
+    // 配置类型枚举
+    public enum ConfigType {
+        BURNER("烧录机"),
+        SCANNER("扫码机");
+        
+        private String description;
+        
+        ConfigType(String description) {
+            this.description = description;
+        }
+        
+        public String getDescription() {
+            return description;
+        }
+    }
     
     // UI组件
     private ComboBox<String> protocolComboBox;
     private TextField hostTextField;
     private TextField portTextField;
     private ComboBox<String> dataModeComboBox;
+    private TextField aliasTextField; // 别名输入框
     private Button saveButton;
     private Button cancelButton;
     private Label statusLabel;
     
+    /**
+     * 构造函数，默认为烧录机配置
+     */
     public NetworkConfigPanel() {
+        this(ConfigType.BURNER);
+    }
+    
+    /**
+     * 构造函数，支持指定配置类型
+     * @param configType 配置类型（烧录机或扫码机）
+     */
+    public NetworkConfigPanel(ConfigType configType) {
+        this.configType = configType;
         initializeUI();
     }
     
     private void initializeUI() {
         stage = new Stage();
-        stage.setTitle("网络接收模块配置");
+        stage.setTitle(configType.getDescription() + "网络配置");
         stage.initModality(Modality.APPLICATION_MODAL);
         stage.setWidth(400);
         stage.setHeight(300);
@@ -75,7 +105,7 @@ public class NetworkConfigPanel extends VBox {
         Label portLabel = new Label("主机端口：");
         portTextField = new TextField();
         portTextField.setPromptText("输入端口号");
-        portTextField.setText("8888");
+        portTextField.setText(configType == ConfigType.BURNER ? "8888" : "8889");
         portTextField.textProperty().addListener((observable, oldValue, newValue) -> {
             // 只允许输入数字
             if (!newValue.matches("\\d*")) {
@@ -92,6 +122,13 @@ public class NetworkConfigPanel extends VBox {
         dataModeComboBox.setValue("ASCII");
         configGrid.add(dataModeLabel, 0, 3);
         configGrid.add(dataModeComboBox, 1, 3);
+        
+        // 配置别名
+        Label aliasLabel = new Label("配置别名：");
+        aliasTextField = new TextField();
+        aliasTextField.setPromptText("输入配置别名（可选）");
+        configGrid.add(aliasLabel, 0, 4);
+        configGrid.add(aliasTextField, 1, 4);
         
         // 状态标签
         statusLabel = new Label("");
@@ -154,9 +191,12 @@ public class NetworkConfigPanel extends VBox {
                 return;
             }
             
-            // 获取协议类型
-            NetworkService.ProtocolType protocolType;
+            // 获取协议类型和数据模式
             String selectedProtocol = protocolComboBox.getValue();
+            String dataModeStr = dataModeComboBox.getValue();
+            
+            // 统一创建NetworkService.Config对象
+            NetworkService.ProtocolType protocolType;
             switch (selectedProtocol) {
                 case "TCP服务端":
                     protocolType = NetworkService.ProtocolType.TCP_SERVER;
@@ -172,13 +212,18 @@ public class NetworkConfigPanel extends VBox {
                     return;
             }
             
-            // 获取数据模式
-            NetworkService.DataMode dataMode = dataModeComboBox.getValue().equals("ASCII")
+            NetworkService.DataMode dataMode = dataModeStr.equals("ASCII")
                     ? NetworkService.DataMode.ASCII
                     : NetworkService.DataMode.HEX;
             
-            // 创建配置对象
-            config = new NetworkService.Config(protocolType, host, port, dataMode);
+            // 根据配置类型设置服务类型
+            NetworkService.ServiceType serviceType = configType == ConfigType.BURNER 
+                    ? NetworkService.ServiceType.BURNER 
+                    : NetworkService.ServiceType.SCANNER;
+            
+            // 获取别名
+            String alias = aliasTextField.getText().trim();
+            config = new NetworkService.Config(protocolType, host, port, dataMode, serviceType, alias);
             
             // 保存配置到服务
             saveToService();
@@ -187,7 +232,9 @@ public class NetworkConfigPanel extends VBox {
             statusLabel.setText("配置保存成功");
             statusLabel.setStyle("-fx-text-fill: green;");
             
-            logger.info("Network configuration saved: " + protocolType + ", host: " + host + ", port: " + port + ", mode: " + dataMode);
+            // 日志中包含别名
+            String aliasInfo = alias.isEmpty() ? "" : "[别名: " + alias + "] ";
+            logger.info(configType.getDescription() + "网络配置保存" + aliasInfo + ": " + selectedProtocol + ", host: " + host + ", port: " + port + ", mode: " + dataModeStr);
             
             // 3秒后自动关闭窗口
             new Thread(() -> {
@@ -203,15 +250,16 @@ public class NetworkConfigPanel extends VBox {
             showError("端口号必须是数字");
         } catch (Exception e) {
             showError("保存配置失败：" + e.getMessage());
-            logger.error("Failed to save network configuration: " + e.getMessage());
+            logger.error("Failed to save " + configType.getDescription() + " configuration: " + e.getMessage());
         }
     }
     
     /**
-     * 保存配置到NetworkService
-     * @throws Exception 当保存到配置管理系统失败时抛出异常
+     * 保存配置到服务
+     * @throws Exception 当保存失败时抛出异常
      */
     private void saveToService() throws Exception {
+        // 统一使用NetworkService
         NetworkService.getInstance().startService(config);
         // 同时保存到配置管理系统
         saveToConfigService();
@@ -225,79 +273,57 @@ public class NetworkConfigPanel extends VBox {
         try {
             ConfigService configService = ConfigService.getInstance();
             
-            // 验证配置对象
-            if (config == null) {
-                throw new IllegalStateException("配置对象不能为空");
-            }
-            if (config.getProtocolType() == null) {
-                throw new IllegalStateException("协议类型不能为空");
-            }
-            if (config.getHost() == null || config.getHost().trim().isEmpty()) {
-                throw new IllegalStateException("主机地址不能为空");
-            }
+            // 根据配置类型获取不同的配置前缀
+            String configPrefix = configType == ConfigType.BURNER ? "network." : "scanner.";
+            String description = configType.getDescription();
             
-            logger.debug("开始保存网络配置到配置管理系统");
-            logger.debug("协议类型: " + config.getProtocolType().name());
-            logger.debug("主机地址: " + config.getHost());
-            logger.debug("端口号: " + config.getPort());
+            logger.debug("开始保存" + description + "配置到配置管理系统");
             
-            // 先尝试查找是否已存在配置项
-            try {
-                String existingProtocol = configService.getConfigValueByKey("network.protocol");
-                String existingHost = configService.getConfigValueByKey("network.host");
-                String existingPort = configService.getConfigValueByKey("network.port");
-                
-                logger.debug("现有配置 - 协议: " + existingProtocol + ", 主机: " + existingHost + ", 端口: " + existingPort);
-            } catch (Exception e) {
-                logger.warn("查询现有配置时发生异常: " + e.getMessage());
-            }
+            // 统一处理配置保存
+            // 保存协议类型
+            ConfigItem protocolItem = new ConfigItem();
+            protocolItem.setConfigKey(configPrefix + "protocol");
+            protocolItem.setConfigValue(config.getProtocolType().name());
+            protocolItem.setDataType("STRING");
+            protocolItem.setDescription(description + "网络协议类型");
+            protocolItem.setRequired(true);
+            configService.saveConfigItem(protocolItem);
             
-            try {
-                // 保存协议类型
-                ConfigItem protocolItem = new ConfigItem();
-                protocolItem.setConfigKey("network.protocol");
-                protocolItem.setConfigValue(config.getProtocolType().name());
-                protocolItem.setDataType("STRING");
-                protocolItem.setDescription("网络协议类型");
-                protocolItem.setRequired(true);
-                configService.saveConfigItem(protocolItem);
-                logger.debug("成功保存协议类型配置");
-                
-                // 保存主机地址
-                ConfigItem hostItem = new ConfigItem();
-                hostItem.setConfigKey("network.host");
-                hostItem.setConfigValue(config.getHost());
-                hostItem.setDataType("STRING");
-                hostItem.setDescription("主机地址");
-                hostItem.setRequired(true);
-                configService.saveConfigItem(hostItem);
-                logger.debug("成功保存主机地址配置");
-                
-                // 保存端口号
-                ConfigItem portItem = new ConfigItem();
-                portItem.setConfigKey("network.port");
-                portItem.setConfigValue(String.valueOf(config.getPort()));
-                portItem.setDataType("INTEGER");
-                portItem.setDescription("端口号");
-                portItem.setRequired(true);
-                configService.saveConfigItem(portItem);
-                logger.debug("成功保存端口号配置");
-                
-                logger.info("网络配置保存到配置管理系统成功");
-            } catch (Exception e) {
-                logger.error("保存配置到配置管理系统失败: " + e.getMessage(), e);
-                throw e;
-            }
+            // 保存主机地址
+            ConfigItem hostItem = new ConfigItem();
+            hostItem.setConfigKey(configPrefix + "host");
+            hostItem.setConfigValue(config.getHost());
+            hostItem.setDataType("STRING");
+            hostItem.setDescription(description + "主机地址");
+            hostItem.setRequired(true);
+            configService.saveConfigItem(hostItem);
+            
+            // 保存端口号
+            ConfigItem portItem = new ConfigItem();
+            portItem.setConfigKey(configPrefix + "port");
+            portItem.setConfigValue(String.valueOf(config.getPort()));
+            portItem.setDataType("INTEGER");
+            portItem.setDescription(description + "端口号");
+            portItem.setRequired(true);
+            configService.saveConfigItem(portItem);
             
             // 保存数据模式
             ConfigItem dataModeItem = new ConfigItem();
-            dataModeItem.setConfigKey("network.dataMode");
+            dataModeItem.setConfigKey(configPrefix + "dataMode");
             dataModeItem.setConfigValue(config.getDataMode().name());
             dataModeItem.setDataType("STRING");
-            dataModeItem.setDescription("数据格式");
+            dataModeItem.setDescription(description + "数据格式");
             configService.saveConfigItem(dataModeItem);
             
-            logger.info("网络配置已保存到配置管理系统");
+            // 保存别名
+            ConfigItem aliasItem = new ConfigItem();
+            aliasItem.setConfigKey(configPrefix + "alias");
+            aliasItem.setConfigValue(config.getAlias());
+            aliasItem.setDataType("STRING");
+            aliasItem.setDescription(description + "配置别名");
+            configService.saveConfigItem(aliasItem);
+            
+            logger.info(description + "配置已保存到配置管理系统");
         } catch (Exception e) {
             logger.error("保存配置到配置管理系统失败: " + e.getMessage());
             throw e; // 重新抛出异常，让上层知道保存失败
@@ -312,17 +338,29 @@ public class NetworkConfigPanel extends VBox {
             // 优先从配置管理系统加载配置
             boolean loadedFromConfigService = loadFromConfigService();
             
-            // 如果从配置管理系统加载失败，则从NetworkService加载
+            // 如果从配置管理系统加载失败，则从NetworkService加载配置
             if (!loadedFromConfigService) {
                 NetworkService service = NetworkService.getInstance();
-                NetworkService.Config currentConfig = service.getCurrentConfig();
-                
+                NetworkService.Config currentConfig = service.getConfig();
                 if (currentConfig != null) {
-                    loadFromNetworkService(currentConfig);
+                    // 根据配置类型加载相应配置
+                    if (configType == ConfigType.BURNER) {
+                        loadBurnerConfig(currentConfig);
+                    } else {
+                        // 对于扫码机配置，我们需要创建一个新的Config对象并设置正确的ServiceType
+                        NetworkService.Config scannerConfig = new NetworkService.Config(
+                                currentConfig.getProtocolType(),
+                                currentConfig.getHost(),
+                                currentConfig.getPort(),
+                                currentConfig.getDataMode(),
+                                NetworkService.ServiceType.SCANNER
+                        );
+                        loadScannerConfig(scannerConfig);
+                    }
                 }
             }
         } catch (Exception e) {
-            logger.warn("Failed to load network configuration: " + e.getMessage());
+            logger.warn("Failed to load " + configType.getDescription() + " configuration: " + e.getMessage());
         }
     }
     
@@ -333,29 +371,36 @@ public class NetworkConfigPanel extends VBox {
     private boolean loadFromConfigService() {
         try {
             ConfigService configService = ConfigService.getInstance();
+            String configPrefix = configType == ConfigType.BURNER ? "network." : "scanner.";
             
             // 加载协议类型
-            String protocol = configService.getConfigValueByKey("network.protocol");
+            String protocol = configService.getConfigValueByKey(configPrefix + "protocol");
             if (protocol == null) {
                 return false;
             }
             
             // 加载主机地址
-            String host = configService.getConfigValueByKey("network.host");
+            String host = configService.getConfigValueByKey(configPrefix + "host");
             if (host == null) {
                 return false;
             }
             
             // 加载端口号
-            String portStr = configService.getConfigValueByKey("network.port");
+            String portStr = configService.getConfigValueByKey(configPrefix + "port");
             if (portStr == null) {
                 return false;
             }
             
             // 加载数据模式
-            String dataMode = configService.getConfigValueByKey("network.dataMode");
+            String dataMode = configService.getConfigValueByKey(configPrefix + "dataMode");
             if (dataMode == null) {
                 return false;
+            }
+            
+            // 加载别名
+            String alias = configService.getConfigValueByKey(configPrefix + "alias");
+            if (alias == null) {
+                alias = "";
             }
             
             // 设置UI组件值
@@ -370,19 +415,20 @@ public class NetworkConfigPanel extends VBox {
             hostTextField.setText(host);
             portTextField.setText(portStr);
             dataModeComboBox.setValue(dataMode.equals("ASCII") ? "ASCII" : "HEX");
+            aliasTextField.setText(alias);
             
-            logger.info("从配置管理系统加载网络配置成功");
+            logger.info("从配置管理系统加载" + configType.getDescription() + "配置成功");
             return true;
         } catch (Exception e) {
-            logger.warn("从配置管理系统加载网络配置失败: " + e.getMessage());
+            logger.warn("从配置管理系统加载" + configType.getDescription() + "配置失败: " + e.getMessage());
             return false;
         }
     }
     
     /**
-     * 从NetworkService加载配置
+     * 加载烧录机配置
      */
-    private void loadFromNetworkService(NetworkService.Config currentConfig) {
+    private void loadBurnerConfig(NetworkService.Config currentConfig) {
         // 加载协议类型
         switch (currentConfig.getProtocolType()) {
             case TCP_SERVER:
@@ -403,7 +449,40 @@ public class NetworkConfigPanel extends VBox {
         // 加载数据模式
         dataModeComboBox.setValue(currentConfig.getDataMode() == NetworkService.DataMode.ASCII ? "ASCII" : "HEX");
         
-        logger.info("从NetworkService加载网络配置成功");
+        // 设置别名（如果有）
+        aliasTextField.setText(currentConfig.getAlias() != null ? currentConfig.getAlias() : "");
+        
+        logger.info("从NetworkService加载烧录机配置成功");
+    }
+    
+    /**
+     * 加载扫码机配置
+     */
+    private void loadScannerConfig(NetworkService.Config currentConfig) {
+        // 加载协议类型
+        switch (currentConfig.getProtocolType()) {
+            case TCP_SERVER:
+                protocolComboBox.setValue("TCP服务端");
+                break;
+            case TCP_CLIENT:
+                protocolComboBox.setValue("TCP客户端");
+                break;
+            case UDP:
+                protocolComboBox.setValue("UDP");
+                break;
+        }
+        
+        // 加载主机地址和端口
+        hostTextField.setText(currentConfig.getHost());
+        portTextField.setText(String.valueOf(currentConfig.getPort()));
+        
+        // 加载数据模式
+        dataModeComboBox.setValue(currentConfig.getDataMode() == NetworkService.DataMode.ASCII ? "ASCII" : "HEX");
+        
+        // 设置别名（如果有）
+        aliasTextField.setText(currentConfig.getAlias() != null ? currentConfig.getAlias() : "");
+        
+        logger.info("加载扫码机配置成功");
     }
     
     /**
@@ -415,9 +494,23 @@ public class NetworkConfigPanel extends VBox {
     }
     
     /**
-     * 获取配置
+     * 获取烧录机配置
      */
-    public NetworkService.Config getConfig() {
-        return config;
+    public NetworkService.Config getBurnerConfig() {
+        return configType == ConfigType.BURNER && config instanceof NetworkService.Config ? (NetworkService.Config) config : null;
+    }
+    
+    /**
+     * 获取扫码机配置
+     */
+    public NetworkService.Config getScannerConfig() {
+        return configType == ConfigType.SCANNER ? config : null;
+    }
+    
+    /**
+     * 获取配置类型
+     */
+    public ConfigType getConfigType() {
+        return configType;
     }
 }

@@ -67,7 +67,8 @@ public class AutoProcessPanel extends BorderPane {
     private StringProperty expectedBarcodeCount = new SimpleStringProperty("6");
     private StringProperty actualBarcodeCount = new SimpleStringProperty("0");
     private StringProperty connectionStatus = new SimpleStringProperty("0个连接"); // 连接状态属性
-    private int connectedClients = 0; // 连接的客户端数量
+    private StringProperty scannerStatus = new SimpleStringProperty("未连接"); // 扫码机状态属性
+    private StringProperty scannerConnectionStatus = new SimpleStringProperty("0个连接"); // 扫码机连接状态属性
     private static final String CONFIG_KEY_EXPECTED_BARCODE_COUNT = "expected_barcode_count";
     
     // 数据管理
@@ -206,9 +207,12 @@ public class AutoProcessPanel extends BorderPane {
     }
 
     private void initUI() {
+        // 创建菜单栏
+        MenuBar menuBar = createMenuBar();
+        setTop(menuBar);
+        
         // 顶部状态栏
         VBox statusBox = createStatusBox();
-        setTop(statusBox);
         
         // 扫描框区域
         VBox scanBox = createScanBox();
@@ -305,8 +309,10 @@ public class AutoProcessPanel extends BorderPane {
         
         bottomBox.getChildren().addAll(buttonFlowPane, logContainer);
         
-        setCenter(dataPanel);
-        setBottom(bottomBox);
+        // 创建主内容区域，包含状态栏、数据面板和底部区域
+        VBox mainContent = new VBox(10);
+        mainContent.getChildren().addAll(statusBox, dataPanel, bottomBox);
+        setCenter(mainContent);
         
         setPadding(new Insets(10));
         
@@ -390,24 +396,16 @@ public class AutoProcessPanel extends BorderPane {
             }
             
             @Override
+            public void onDataReceived(byte[] data) {
+                // 将字节数组转换为字符串，然后调用已有的方法
+                String dataStr = new String(data);
+                onDataReceived(dataStr);
+            }
+            
+            @Override
             public void onConnectionStatusChanged(boolean connected) {
-                // 在JavaFX应用线程中更新UI
-                Platform.runLater(() -> {
-                    String status = connected ? "开启" : "关闭";
-                    log("[网络状态] " + status);
-                    plcStatus.set(status); // 更新Server状态显示
-                    
-                    // 更新连接状态
-                    // 不再使用简化实现，而是从NetworkService获取实际连接数
-                    int currentConnections = networkService.getConnectedClientCount();
-                    connectionStatus.set(currentConnections + "个连接");
-                    
-                    // 更新Server控制按钮状态
-                    if (serverToggleButton != null) {
-                        serverToggleButton.setSelected(connected);
-                        serverToggleButton.setText(connected ? "关闭" : "开启");
-                    }
-                });
+                // 旧版方法，默认处理烧录机服务
+                handleConnectionStatusChanged(connected, NetworkService.ServiceType.BURNER);
             }
             
             @Override
@@ -420,9 +418,81 @@ public class AutoProcessPanel extends BorderPane {
             
             @Override
             public void onConnectionCountChanged(int count) {
+                // 旧版方法，默认处理烧录机服务
+                handleConnectionCountChanged(count, NetworkService.ServiceType.BURNER);
+            }
+            
+            @Override
+            public void onLog(String message) {
+                // 兼容扫码机日志方法，调用已有的onLogReceived
+                onLogReceived(message);
+            }
+            
+            // 重写新版方法，支持服务类型区分
+            @Override
+            public void onDataReceived(String data, NetworkService.ServiceType serviceType) {
+                // 对于不同服务类型的数据，可以在这里进行不同处理
+                // 当前简单处理，所有服务类型都使用相同的方式显示数据
+                onDataReceived(data);
+            }
+            
+            @Override
+            public void onDataReceived(byte[] data, NetworkService.ServiceType serviceType) {
+                // 对于不同服务类型的数据，可以在这里进行不同处理
+                // 当前简单处理，所有服务类型都使用相同的方式显示数据
+                onDataReceived(data);
+            }
+            
+            @Override
+            public void onConnectionStatusChanged(boolean connected, NetworkService.ServiceType serviceType) {
+                handleConnectionStatusChanged(connected, serviceType);
+            }
+            
+            @Override
+            public void onConnectionCountChanged(int count, NetworkService.ServiceType serviceType) {
+                handleConnectionCountChanged(count, serviceType);
+            }
+            
+            // 处理连接状态变化的私有辅助方法
+            private void handleConnectionStatusChanged(boolean connected, NetworkService.ServiceType serviceType) {
+                // 在JavaFX应用线程中更新UI
+                Platform.runLater(() -> {
+                    String status = connected ? "开启" : "关闭";
+                    
+                    // 根据服务类型记录不同的日志和更新不同的状态显示
+                    if (serviceType == NetworkService.ServiceType.BURNER) {
+                        log("[烧录机网络状态] " + status);
+                        plcStatus.set(status);
+                        // 获取烧录机服务的连接数
+                        int burnerConnections = networkService.getConnectedClientCount(NetworkService.ServiceType.BURNER);
+                        connectionStatus.set(burnerConnections + "个连接");
+                    } else if (serviceType == NetworkService.ServiceType.SCANNER) {
+                        log("[扫码机网络状态] " + status);
+                        scannerStatus.set(status);
+                        // 获取扫码机服务的连接数
+                        int scannerConnections = networkService.getConnectedClientCount(NetworkService.ServiceType.SCANNER);
+                        scannerConnectionStatus.set(scannerConnections + "个连接");
+                    }
+                    
+                    // 只有当两个服务都处于开启状态时，才将按钮标记为选中状态
+                    if (serverToggleButton != null) {
+                        boolean bothServicesRunning = networkService.isServiceRunning(NetworkService.ServiceType.BURNER) && 
+                                                    networkService.isServiceRunning(NetworkService.ServiceType.SCANNER);
+                        serverToggleButton.setSelected(bothServicesRunning);
+                        serverToggleButton.setText(bothServicesRunning ? "关闭" : "开启");
+                    }
+                });
+            }
+            
+            // 处理连接数变化的私有辅助方法
+            private void handleConnectionCountChanged(int count, NetworkService.ServiceType serviceType) {
                 // 在JavaFX应用线程中更新连接数显示
                 Platform.runLater(() -> {
-                    connectionStatus.set(count + "个连接");
+                    if (serviceType == NetworkService.ServiceType.BURNER) {
+                        connectionStatus.set(count + "个连接");
+                    } else if (serviceType == NetworkService.ServiceType.SCANNER) {
+                        scannerConnectionStatus.set(count + "个连接");
+                    }
                 });
             }
         });
@@ -500,50 +570,98 @@ public class AutoProcessPanel extends BorderPane {
         networkConfigRow.setFillHeight(true); // 填充高度
         HBox.setHgrow(networkConfigRow, Priority.ALWAYS); // 水平方向占据全部可用空间
         
-        // 添加网络配置按钮
-        networkConfigButton = new Button("网络配置");
-        networkConfigButton.setOnAction(e -> {
-            try {
-                NetworkConfigPanel configPanel = new NetworkConfigPanel();
-                configPanel.show();
-            } catch (Exception ex) {
-                log("Failed to open network config panel: " + ex.getMessage());
-            }
-        });
+        // 网络配置按钮已移至菜单栏，此处不再创建
         
         // 添加Server控制按钮（合并启动和停止按钮）
-        serverToggleButton = new ToggleButton("开启");
+        serverToggleButton = new ToggleButton("server开启");
         serverToggleButton.setPrefWidth(80);
         
         // 设置按钮事件处理
         serverToggleButton.setOnAction(e -> {
             if (serverToggleButton.isSelected()) {
-                // 启动Server服务
+                // 启动所有Server服务
                 log("[操作] 用户点击了'Server开启'按钮");
                 try {
-                    // 获取当前网络配置
-                    String host = "127.0.0.1";
-                    String port = "8888";
+                    // 获取烧录机服务配置
+                    String burnerHost = "127.0.0.1";
+                    String burnerPort = "8888";
                     try {
-                        host = ConfigService.getInstance().getConfigValueByKey("network.host") != null ? 
-                               ConfigService.getInstance().getConfigValueByKey("network.host") : host;
-                        port = ConfigService.getInstance().getConfigValueByKey("network.port") != null ? 
-                               ConfigService.getInstance().getConfigValueByKey("network.port") : port;
+                        burnerHost = ConfigService.getInstance().getConfigValueByKey("network.host") != null ? 
+                               ConfigService.getInstance().getConfigValueByKey("network.host") : burnerHost;
+                        burnerPort = ConfigService.getInstance().getConfigValueByKey("network.port") != null ? 
+                               ConfigService.getInstance().getConfigValueByKey("network.port") : burnerPort;
                     } catch (Exception ex) {
-                        log("[配置加载错误] 加载网络配置失败，使用默认值: " + ex.getMessage());
+                        log("[配置加载错误] 加载烧录机网络配置失败，使用默认值: " + ex.getMessage());
                     }
                     
-                    // 创建网络配置
-                    NetworkService.Config config = new NetworkService.Config(
-                            NetworkService.ProtocolType.TCP_SERVER, 
-                            host, 
-                            Integer.parseInt(port), 
-                            NetworkService.DataMode.ASCII
-                    );
+                    // 获取扫码机服务配置
+                    String scannerHost = "127.0.0.1";
+                    String scannerPort = "8889";
+                    try {
+                        scannerHost = ConfigService.getInstance().getConfigValueByKey("scanner.network.host") != null ? 
+                               ConfigService.getInstance().getConfigValueByKey("scanner.network.host") : scannerHost;
+                        scannerPort = ConfigService.getInstance().getConfigValueByKey("scanner.network.port") != null ? 
+                               ConfigService.getInstance().getConfigValueByKey("scanner.network.port") : scannerPort;
+                    } catch (Exception ex) {
+                        log("[配置加载错误] 加载扫码机网络配置失败，使用默认值: " + ex.getMessage());
+                    }
                     
-                    // 启动网络服务
-                    networkService.startService(config);
-                    log("[操作结果] 已启动Server服务，监听地址: " + host + ":" + port);
+                    // 创建数据格式配置
+                    NetworkService.DataMode dataMode = NetworkService.DataMode.ASCII;
+                    try {
+                        // 尝试从配置服务加载数据格式
+                        String dataModeStr = ConfigService.getInstance().getConfigValueByKey("network.dataMode");
+                        if (dataModeStr != null && dataModeStr.equals("HEX")) {
+                            dataMode = NetworkService.DataMode.HEX;
+                        }
+                    } catch (Exception ex) {
+                        log("[配置加载错误] 加载数据格式配置失败，使用默认值ASCII: " + ex.getMessage());
+                    }
+                    
+                    // 加载烧录机协议类型
+                    NetworkService.ProtocolType burnerProtocol = NetworkService.ProtocolType.TCP_SERVER; // 默认值
+                    try {
+                        String burnerProtocolStr = ConfigService.getInstance().getConfigValueByKey("network.protocol");
+                        if (burnerProtocolStr != null) {
+                            burnerProtocol = NetworkService.ProtocolType.valueOf(burnerProtocolStr);
+                        }
+                    } catch (Exception ex) {
+                        log("[配置加载错误] 加载烧录机协议类型失败，使用默认值TCP_SERVER: " + ex.getMessage());
+                    }
+                    
+                    // 创建烧录机服务配置并启动
+                    NetworkService.Config burnerConfig = new NetworkService.Config(
+                            burnerProtocol, 
+                            burnerHost, 
+                            Integer.parseInt(burnerPort), 
+                            dataMode,
+                            NetworkService.ServiceType.BURNER
+                    );
+                    networkService.startService(burnerConfig);
+                    log("[操作结果] 已启动烧录机服务，协议: " + burnerProtocol + ", 地址: " + burnerHost + ":" + burnerPort + ", 数据格式: " + dataMode);
+                    
+                    // 加载扫码机协议类型
+                    NetworkService.ProtocolType scannerProtocol = NetworkService.ProtocolType.TCP_SERVER; // 默认值
+                    try {
+                        String scannerProtocolStr = ConfigService.getInstance().getConfigValueByKey("scanner.protocol");
+                        if (scannerProtocolStr != null) {
+                            scannerProtocol = NetworkService.ProtocolType.valueOf(scannerProtocolStr);
+                        }
+                    } catch (Exception ex) {
+                        log("[配置加载错误] 加载扫码机协议类型失败，使用默认值TCP_SERVER: " + ex.getMessage());
+                    }
+                    
+                    // 创建扫码机服务配置并启动
+                    NetworkService.Config scannerConfig = new NetworkService.Config(
+                            scannerProtocol, 
+                            scannerHost, 
+                            Integer.parseInt(scannerPort), 
+                            dataMode,
+                            NetworkService.ServiceType.SCANNER
+                    );
+                    networkService.startService(scannerConfig);
+                    log("[操作结果] 已启动扫码机服务，协议: " + scannerProtocol + ", 地址: " + scannerHost + ":" + scannerPort + ", 数据格式: " + dataMode);
+                    
                     serverToggleButton.setText("关闭");
                 } catch (Exception ex) {
                     log("[操作错误] 启动Server服务失败: " + ex.getMessage());
@@ -552,13 +670,13 @@ public class AutoProcessPanel extends BorderPane {
                     serverToggleButton.setText("开启");
                 }
             } else {
-                // 停止Server服务
+                // 停止所有Server服务
                 log("[操作] 用户点击了'Server关闭'按钮");
                 try {
-                    // 停止网络服务
+                    // 停止所有网络服务
                     if (networkService != null) {
-                        networkService.stopService();
-                        log("[操作结果] 已停止Server服务");
+                        networkService.stopAllServices();
+                        log("[操作结果] 已停止所有Server服务");
                     } else {
                         log("[操作结果] Server服务未初始化");
                     }
@@ -580,12 +698,15 @@ public class AutoProcessPanel extends BorderPane {
         
         // 将所有网络配置相关组件添加到同一行
         networkConfigRow.getChildren().addAll(
-                networkConfigButton,
                 serverToggleButton,
-                new Label("Server状态: "),
+                new Label("烧录机状态: "),
                 createStatusLabel(plcStatus),
                 new Label("连接数: "),
-                createStatusLabel(connectionStatus)
+                createStatusLabel(connectionStatus),
+                new Label("扫码机状态: "),
+                createStatusLabel(scannerStatus),
+                new Label("扫码机连接数: "),
+                createStatusLabel(scannerConnectionStatus)
         );
         
         // 将流程控制和网络配置行添加到流程控制区域
@@ -610,15 +731,7 @@ public class AutoProcessPanel extends BorderPane {
         configButtonsBox.setVgap(5);
         configButtonsBox.setPrefWrapLength(600); // 设置换行宽度
         
-        // 添加上位机配置按钮
-        upperComputerConfigButton = new Button("编辑上位机配置");
-        upperComputerConfigButton.setOnAction(e -> showUpperComputerConfigDialog());
-        configButtonsBox.getChildren().add(upperComputerConfigButton);
-        
-        // 添加EMS配置按钮
-        emsConfigButton = new Button("编辑EMS配置");
-        emsConfigButton.setOnAction(e -> showEmsConfigDialog());
-        configButtonsBox.getChildren().add(emsConfigButton);
+        // 配置按钮已移至菜单栏，此处为空的FlowPane以保持布局一致性
         
         HBox barcodeCountBox = new HBox(10);
         barcodeCountBox.setAlignment(Pos.CENTER_LEFT);
@@ -729,7 +842,7 @@ public class AutoProcessPanel extends BorderPane {
         scanBox.setPadding(new Insets(5));
         scanBox.setStyle("-fx-border-color: lightblue; -fx-border-width: 1px; -fx-border-radius: 5px; -fx-background-color: #f0f8ff;");
         
-        Label scanLabel = new Label("条码输入与串口监控");
+        Label scanLabel = new Label("条码输入");
         scanLabel.setStyle("-fx-font-weight: bold;");
         
         HBox inputBox = new HBox(10);
@@ -740,23 +853,25 @@ public class AutoProcessPanel extends BorderPane {
         confirmBarcodeButton = new Button("确认输入");
         confirmBarcodeButton.setOnAction(e -> handleManualBarcodeInput());
         
-        // 串口选择和监控
-        Label comPortLabel = new Label("COM端口：");
-        comPortComboBox = new ComboBox<>();
-        comPortComboBox.getItems().addAll("COM1", "COM2", "COM3", "COM4", "COM5");
-        comPortComboBox.setValue("COM1");
+        // // 串口选择和监控
+        // Label comPortLabel = new Label("COM端口：");
+        // comPortComboBox = new ComboBox<>();
+        // comPortComboBox.getItems().addAll("COM1", "COM2", "COM3", "COM4", "COM5");
+        // comPortComboBox.setValue("COM1");
         
-        startComMonitorButton = new Button("开始监控");
-        startComMonitorButton.setOnAction(e -> startComPortMonitoring());
+        // startComMonitorButton = new Button("开始监控");
+        // startComMonitorButton.setOnAction(e -> startComPortMonitoring());
         
-        stopComMonitorButton = new Button("停止监控");
-        stopComMonitorButton.setOnAction(e -> stopComPortMonitoring());
-        stopComMonitorButton.setDisable(true);
+        // stopComMonitorButton = new Button("停止监控");
+        // stopComMonitorButton.setOnAction(e -> stopComPortMonitoring());
+        // stopComMonitorButton.setDisable(true);
         
+        //串口换成tcp。
         inputBox.getChildren().addAll(
-            scanLabel, barcodeInputField, confirmBarcodeButton,
-            comPortLabel, comPortComboBox,
-            startComMonitorButton, stopComMonitorButton
+            scanLabel, barcodeInputField, confirmBarcodeButton
+            // comPortLabel, 
+            // comPortComboBox,
+            // startComMonitorButton, stopComMonitorButton
         );
         
         scanBox.getChildren().add(inputBox);
@@ -1126,6 +1241,150 @@ public class AutoProcessPanel extends BorderPane {
         }
     }
     
+    /**
+     * 显示烧录机配置对话框
+     */
+    private void showBurnerConfigDialog() {
+        try {
+            // BurnerConfigPanel configPanel = new BurnerConfigPanel();
+            // configPanel.show();
+            NetworkConfigPanel configPanel = new NetworkConfigPanel();
+            configPanel.show();
+        } catch (Exception e) {
+            log("Failed to open network config panel: " + e.getMessage());
+            showSuccessMessage("打开网络配置面板失败: " + e.getMessage());  
+        }
+    }
+    
+    /**
+     * 显示扫码机配置对话框
+     */
+    private void showScannerConfigDialog() {
+        // 使用NetworkConfigPanel显示扫码机配置界面
+        NetworkConfigPanel configPanel = new NetworkConfigPanel(NetworkConfigPanel.ConfigType.SCANNER);
+        configPanel.show();
+    }
+    
+    /**
+     * 显示三方软件配置对话框
+     */
+    private void showThirdPartyConfigDialog() {
+        // 创建对话框
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("三方软件配置");
+        dialog.setHeaderText("设置三方软件路径和启动参数");
+        
+        // 设置对话框按钮
+        ButtonType saveButtonType = new ButtonType("保存", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+        
+        // 创建表单布局
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20, 150, 10, 10));
+        
+        // 创建输入字段
+        TextField pathTextField = new TextField();
+        TextField argsTextField = new TextField();
+        
+        // 从配置服务加载现有配置
+        try {
+            String savedPath = ConfigService.getInstance().getConfigValueByKey(CONFIG_KEY_THIRD_PARTY_PATH);
+            pathTextField.setText(savedPath != null ? savedPath : DEFAULT_THIRD_PARTY_PATH);
+            
+            String savedArgs = ConfigService.getInstance().getConfigValueByKey(CONFIG_KEY_THIRD_PARTY_ARGS);
+            argsTextField.setText(savedArgs != null ? savedArgs : DEFAULT_THIRD_PARTY_ARGS);
+        } catch (Exception e) {
+            log("[配置加载错误] 从配置服务加载三方软件配置失败: " + e.getMessage());
+            // 使用默认值
+            pathTextField.setText(DEFAULT_THIRD_PARTY_PATH);
+            argsTextField.setText(DEFAULT_THIRD_PARTY_ARGS);
+        }
+        
+        // 添加标签和输入字段到网格
+        grid.add(new Label("软件路径:"), 0, 0);
+        grid.add(pathTextField, 1, 0);
+        grid.add(new Label("启动参数:"), 0, 1);
+        grid.add(argsTextField, 1, 1);
+        
+        // 设置对话框内容
+        dialog.getDialogPane().setContent(grid);
+        
+        // 验证输入 - 三方软件配置允许空值，所以不需要禁用保存按钮
+        
+        // 显示对话框并处理结果
+        dialog.showAndWait().ifPresent(result -> {
+            if (result == saveButtonType) {
+                String path = pathTextField.getText().trim();
+                String args = argsTextField.getText().trim();
+                
+                try {
+                    // 保存三方软件配置
+                    saveConfig(CONFIG_KEY_THIRD_PARTY_PATH, path, "三方软件路径", "STRING");
+                    saveConfig(CONFIG_KEY_THIRD_PARTY_ARGS, args, "三方软件启动参数", "STRING");
+                    
+                    log("[配置更新] 成功保存三方软件配置 - 路径: " + path + ", 参数: " + args);
+                    showSuccessMessage("三方软件配置保存成功");
+                } catch (Exception e) {
+                    log("[配置保存错误] 保存三方软件配置失败: " + e.getMessage());
+                    e.printStackTrace();
+                    showSuccessMessage("三方软件配置保存失败: " + e.getMessage());
+                }
+            }
+        });
+    }
+    
+    /**
+     * 通用的配置保存方法
+     */
+    private void saveConfig(String configKey, String configValue, String description, String dataType) {
+        try {
+            // 先检查配置项是否已存在
+            String existingValue = ConfigService.getInstance().getConfigValueByKey(configKey);
+            ConfigItem configItem = null;
+            
+            if (existingValue != null) {
+                // 如果已存在，获取现有配置项
+                try {
+                    List<ConfigItem> allConfigs = DatabaseManager.getAllConfigItems();
+                    for (ConfigItem item : allConfigs) {
+                        if (item.getConfigKey().equals(configKey)) {
+                            configItem = item;
+                            configItem.setConfigValue(configValue); // 更新值
+                            break;
+                        }
+                    }
+                } catch (SQLException e) {
+                    // 如果获取现有配置项失败，创建新的配置项
+                    log("[配置检查] 获取现有配置项失败: " + e.getMessage() + ", 将创建新配置项");
+                    configItem = new ConfigItem(
+                        configKey,
+                        configValue,
+                        description,
+                        dataType,
+                        false // 一般配置项设为非必填
+                    );
+                }
+            } else {
+                // 如果不存在，创建新配置项
+                configItem = new ConfigItem(
+                    configKey,
+                    configValue,
+                    description,
+                    dataType,
+                    false // 一般配置项设为非必填
+                );
+            }
+            
+            ConfigService.getInstance().saveConfigItem(configItem);
+            log("[配置保存] 已保存配置 - 键: " + configKey + ", 值: " + configValue);
+        } catch (Exception e) {
+            log("[配置保存错误] 保存配置失败: " + e.getMessage());
+            throw new RuntimeException("保存配置失败", e);
+        }
+    }
+    
     private void startProcess() {
         log("[操作] 用户点击了'启动流程'按钮");
         if (processStarted.get()) {
@@ -1168,6 +1427,90 @@ public class AutoProcessPanel extends BorderPane {
         currentBarcodes.clear();
         log("[操作结果] 条码缓存已清空");
         log("[流程状态] 当前流程状态保持不变");
+    }
+    
+    // 烧录机配置相关常量
+    private static final String CONFIG_KEY_BURNER_IP = "burner.ip";
+    private static final String CONFIG_KEY_BURNER_PORT = "burner.port";
+    private static final String CONFIG_KEY_BURNER_TIMEOUT = "burner.timeout";
+    private static final String DEFAULT_BURNER_IP = "127.0.0.1";
+    private static final String DEFAULT_BURNER_PORT = "8888";
+    private static final String DEFAULT_BURNER_TIMEOUT = "30000";
+    
+    // 扫码机配置相关常量
+    private static final String CONFIG_KEY_SCANNER_COM_PORTS = "scanner.com_ports";
+    private static final String CONFIG_KEY_SCANNER_BAUD_RATE = "scanner.baud_rate";
+    private static final String DEFAULT_SCANNER_COM_PORTS = "COM1,COM2,COM3";
+    private static final String DEFAULT_SCANNER_BAUD_RATE = "9600";
+    
+    // 三方软件配置相关常量
+    private static final String CONFIG_KEY_THIRD_PARTY_PATH = "third_party.path";
+    private static final String CONFIG_KEY_THIRD_PARTY_ARGS = "third_party.args";
+    private static final String DEFAULT_THIRD_PARTY_PATH = "";
+    private static final String DEFAULT_THIRD_PARTY_ARGS = "";
+    
+    /**
+     * 创建菜单栏，包含网络配置、编辑上位机配置和编辑EMS配置功能
+     */
+    private MenuBar createMenuBar() {
+        MenuBar menuBar = new MenuBar();
+        
+        // // 创建配置菜单
+        // Menu configMenu = new Menu("配置");
+        
+        // // 创建网络配置菜单项
+        // MenuItem networkConfigItem = new MenuItem("网络配置");
+        // networkConfigItem.setOnAction(e -> {
+        //     try {
+        //         NetworkConfigPanel configPanel = new NetworkConfigPanel();
+        //         configPanel.show();
+        //     } catch (Exception ex) {
+        //         log("Failed to open network config panel: " + ex.getMessage());
+        //     }
+        // });
+        
+        // // 创建编辑上位机配置菜单项
+        // MenuItem upperComputerConfigItem = new MenuItem("编辑上位机配置");
+        // upperComputerConfigItem.setOnAction(e -> showUpperComputerConfigDialog());
+        
+        // // 创建编辑EMS配置菜单项
+        // MenuItem emsConfigItem = new MenuItem("编辑EMS配置");
+        // emsConfigItem.setOnAction(e -> showEmsConfigDialog());
+        
+        // // 将菜单项添加到配置菜单
+        // configMenu.getItems().addAll(
+        //     networkConfigItem,
+        //     upperComputerConfigItem,
+        //     emsConfigItem
+        // );
+        
+        // 创建烧录机配置菜单
+        Menu burnerMenu = new Menu("烧录机配置");
+        MenuItem burnerConfigItem = new MenuItem("编辑烧录机配置");
+        burnerConfigItem.setOnAction(e -> showBurnerConfigDialog());
+        burnerMenu.getItems().add(burnerConfigItem);
+        
+        // 创建扫码机配置菜单
+        Menu scannerMenu = new Menu("扫码机配置");
+        MenuItem scannerConfigItem = new MenuItem("编辑扫码机配置");
+        scannerConfigItem.setOnAction(e -> showScannerConfigDialog());
+        scannerMenu.getItems().add(scannerConfigItem);
+        
+        // 创建三方软件配置菜单
+        Menu thirdPartyMenu = new Menu("三方软件配置");
+        MenuItem thirdPartyConfigItem = new MenuItem("编辑三方软件配置");
+        thirdPartyConfigItem.setOnAction(e -> showThirdPartyConfigDialog());
+        thirdPartyMenu.getItems().add(thirdPartyConfigItem);
+        
+        // 将菜单添加到菜单栏
+        menuBar.getMenus().addAll(
+            // configMenu,
+            burnerMenu,
+            scannerMenu,
+            thirdPartyMenu
+        );
+        
+        return menuBar;
     }
     
     private void simulateBarcodeScan() {
