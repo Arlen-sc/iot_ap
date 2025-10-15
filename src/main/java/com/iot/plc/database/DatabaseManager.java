@@ -214,7 +214,7 @@ public class DatabaseManager {
                       "UNION ALL " +
                       "SELECT '验证结果' as log_type, id, created_at, message as content, CASE WHEN is_valid THEN '成功' ELSE '失败' END as status FROM validation_result " +
                       "UNION ALL " +
-                      "SELECT '烧录结果' as log_type, id, created_at, CONCAT('设备ID:', device_id, ', 条码:', barcode) as content, CASE WHEN result THEN '成功' ELSE '失败' END as status FROM program_result " +
+                      "SELECT '烧录结果' as log_type, id, created_at, '设备ID:' || device_id || ', 条码:' || barcode as content, CASE WHEN result THEN '成功' ELSE '失败' END as status FROM program_result " +
                       "ORDER BY created_at DESC LIMIT 1000";
         
         try (Connection conn = getConnection();
@@ -272,7 +272,7 @@ public class DatabaseManager {
      */
     public static List<LogItem> getBurnResultLogs() throws SQLException {
         List<LogItem> logs = new ArrayList<>();
-        String sql = "SELECT id, created_at, CONCAT('设备ID:', device_id, ', 条码:', barcode) as content, CASE WHEN result THEN '成功' ELSE '失败' END as status FROM program_result ORDER BY created_at DESC LIMIT 500";
+        String sql = "SELECT id, created_at, '设备ID:' || device_id || ', 条码:' || barcode as content, CASE WHEN result THEN '成功' ELSE '失败' END as status FROM program_result ORDER BY created_at DESC LIMIT 500";
         
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
