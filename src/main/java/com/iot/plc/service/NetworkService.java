@@ -10,7 +10,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import com.iot.plc.config.NetworkConfig;
-import com.iot.plc.enumx.ServiceType;
+import com.iot.plc.enumx.TcpServiceEnum;
 import com.iot.plc.listener.NetworkListener;
 import com.iot.plc.logger.Logger;
 import com.iot.plc.model.DataMode;
@@ -29,12 +29,12 @@ public class NetworkService {
     private NetworkListener listener; // 保留旧的监听器引用，为了兼容
     
     // 使用Map管理不同服务类型的服务实例
-    private Map<ServiceType, ServiceInstance> serviceInstances = new HashMap<>();
+    private Map<TcpServiceEnum, ServiceInstance> serviceInstances = new HashMap<>();
     
     /**
      * 获取指定服务类型的连接客户端数量
      */
-    public int getConnectedClientCount(ServiceType serviceType) {
+    public int getConnectedClientCount(TcpServiceEnum serviceType) {
         ServiceInstance instance = serviceInstances.get(serviceType);
         return instance != null ? instance.getConnectedClientCount() : 0;
     }
@@ -42,7 +42,7 @@ public class NetworkService {
     /**
      * 获取指定服务类型的配置
      */
-    public NetworkConfig getConfig(ServiceType serviceType) {
+    public NetworkConfig getConfig(TcpServiceEnum serviceType) {
         ServiceInstance instance = serviceInstances.get(serviceType);
         return instance != null ? instance.getConfig() : null;
     }
@@ -51,13 +51,13 @@ public class NetworkService {
      * 获取当前配置（默认返回BURNER服务类型的配置，为了兼容旧代码）
      */
     public NetworkConfig getConfig() {
-        return getConfig(ServiceType.BURNER);
+        return getConfig(TcpServiceEnum.BURNER);
     }
     
     /**
      * 获取指定服务类型的运行状态
      */
-    public boolean isServiceRunning(ServiceType serviceType) {
+    public boolean isServiceRunning(TcpServiceEnum serviceType) {
         ServiceInstance instance = serviceInstances.get(serviceType);
         return instance != null && instance.isRunning();
     }
@@ -66,8 +66,16 @@ public class NetworkService {
      * 判断默认服务类型（BURNER）是否正在运行
      * 为了兼容旧代码
      */
+    public boolean isServiceRunning() {
+        return isServiceRunning(TcpServiceEnum.BURNER);
+    }
+    
+
+    
+    /**
+     */
     public boolean isRunning() {
-        return isServiceRunning(ServiceType.BURNER);
+        return isServiceRunning(TcpServiceEnum.BURNER);
     }
     
     // 添加网络监听器
@@ -112,7 +120,7 @@ public class NetworkService {
      * 启动扫码机网络服务
      */
     public void startScannerService(String protocolType, String host, int port, DataMode dataMode) {
-        NetworkConfig config = new NetworkConfig(ServiceType.SCANNER, host, port);
+        NetworkConfig config = new NetworkConfig(TcpServiceEnum.SCANNER, host, port);
         // 暂时注释掉ProtocolType设置，等待ProtocolType类问题解决
         // config.setProtocolType(ProtocolType.valueOf(protocolType));
         config.setDataMode(dataMode);
@@ -123,7 +131,7 @@ public class NetworkService {
      * 启动烧录机网络服务
      */
     public void startBurnerService(String protocolType, String host, int port, DataMode dataMode) {
-        NetworkConfig config = new NetworkConfig(ServiceType.BURNER, host, port);
+        NetworkConfig config = new NetworkConfig(TcpServiceEnum.BURNER, host, port);
         // 暂时注释掉ProtocolType设置，等待ProtocolType类问题解决
         // config.setProtocolType(ProtocolType.valueOf(protocolType));
         config.setDataMode(dataMode);
@@ -134,7 +142,7 @@ public class NetworkService {
      * 启动网络服务
      */
     public synchronized void startService(NetworkConfig config) {
-        ServiceType serviceType = config.getServiceType();
+        TcpServiceEnum serviceType = config.getServiceType();
         
         // 停止该服务类型的现有服务
         stopService(serviceType);
@@ -164,7 +172,7 @@ public class NetworkService {
     /**
      * 停止指定类型的网络服务
      */
-    public synchronized void stopService(ServiceType serviceType) {
+    public synchronized void stopService(TcpServiceEnum serviceType) {
         ServiceInstance instance = serviceInstances.get(serviceType);
         if (instance == null || !instance.isRunning()) {
             return;
@@ -177,7 +185,7 @@ public class NetworkService {
                 instance.getTcpServerSocket().close();
             }
         } catch (IOException e) {
-            logger.warn("Failed to close TCP server socket for " + serviceType.getDescription() + ": " + e.getMessage());
+            logger.warn("关闭TCP服务端套接字失败，服务类型: " + serviceType.getDescription() + ", 错误: " + e.getMessage());
         }
         
         try {
@@ -185,14 +193,14 @@ public class NetworkService {
                 instance.getTcpClientSocket().close();
             }
         } catch (IOException e) {
-            logger.warn("Failed to close TCP client socket for " + serviceType.getDescription() + ": " + e.getMessage());
+            logger.warn("关闭TCP客户端套接字失败，服务类型: " + serviceType.getDescription() + ", 错误: " + e.getMessage());
         }
         
         if (instance.getUdpSocket() != null && !instance.getUdpSocket().isClosed()) {
             instance.getUdpSocket().close();
         }
         
-        logger.info(serviceType.getDescription() + " network service stopped");
+        logger.info(serviceType.getDescription() + " 网络服务已停止");
         notifyConnectionStatus(false, serviceType);
     }
     
@@ -200,7 +208,7 @@ public class NetworkService {
      * 停止所有网络服务
      */
     public synchronized void stopAllServices() {
-        for (ServiceType serviceType : ServiceType.values()) {
+        for (TcpServiceEnum serviceType : TcpServiceEnum.values()) {
             stopService(serviceType);
         }
     }
@@ -219,31 +227,31 @@ public class NetworkService {
         NetworkConfig config = serviceInstance.getConfig();
         executorService.submit(() -> {
             try {
-                String logMsg = "[TCP Server] 开始创建ServerSocket，端口: " + config.getPort();
+                String logMsg = "[TCP服务端] 开始创建ServerSocket，端口: " + config.getPort();
                 logger.info(logMsg);
                 notifyLogReceived(logMsg);
                 
                 ServerSocket serverSocket = new ServerSocket(config.getPort());
                 serviceInstance.setTcpServerSocket(serverSocket);
                 
-                logMsg = "[TCP Server] TCP server started successfully on port: " + config.getPort();
+                logMsg = "[TCP服务端] TCP服务端启动成功，端口: " + config.getPort();
                 logger.info(logMsg);
                 notifyLogReceived(logMsg);
                 
                 // 服务成功启动后立即通知状态为已连接
-                logMsg = "[TCP Server] 通知连接状态为已连接";
+                logMsg = "[TCP服务端] 通知连接状态为已连接";
                 logger.info(logMsg);
                 notifyLogReceived(logMsg);
                 notifyConnectionStatus(true, config.getServiceType());
                 
                 while (serviceInstance.isRunning()) {
                     try {
-                        logMsg = "[TCP Server] 等待客户端连接...";
+                        logMsg = "[TCP服务端] 等待客户端连接...";
                         logger.info(logMsg);
                         notifyLogReceived(logMsg); // 将等待客户端连接的日志传递给UI
                         
                         Socket clientSocket = serverSocket.accept();
-                        logMsg = "[TCP Server] Client connected: " + clientSocket.getInetAddress().getHostAddress();
+                        logMsg = "[TCP服务端] 客户端已连接: " + clientSocket.getInetAddress().getHostAddress();
                         logger.info(logMsg);
                         notifyLogReceived(logMsg);
                         
@@ -251,7 +259,7 @@ public class NetworkService {
                         executorService.submit(() -> handleTcpConnection(clientSocket, serviceInstance));
                     } catch (IOException e) {
                         if (serviceInstance.isRunning()) { // 只有在服务运行时才记录错误
-                            logMsg = "[TCP Server] Error accepting TCP connection: " + e.getMessage();
+                            logMsg = "[TCP服务端] 接受TCP连接失败: " + e.getMessage();
                             logger.warn(logMsg);
                             notifyLogReceived(logMsg);
                             // 注意：不要在这里设置为未连接，因为服务器仍然在运行中
@@ -259,7 +267,7 @@ public class NetworkService {
                     }
                 }
             } catch (IOException e) {
-                String logMsg = "[TCP Server] Failed to start TCP server: " + e.getMessage();
+                String logMsg = "[TCP服务端] 启动TCP服务端失败: " + e.getMessage();
                 logger.error(logMsg, e);
                 notifyLogReceived(logMsg);
 
@@ -274,7 +282,7 @@ public class NetworkService {
         NetworkConfig config = serviceInstance.getConfig();
         executorService.submit(() -> {
             String serviceTypeDesc = config.getServiceType().getDescription();
-            String logMsg = "[TCP Client] 尝试连接到 " + serviceTypeDesc + ": " + config.getHost() + ":" + config.getPort();
+            String logMsg = "[TCP客户端] 尝试连接到 " + serviceTypeDesc + ": " + config.getHost() + ":" + config.getPort();
             logger.info(logMsg);
             notifyLogReceived(logMsg);
             
@@ -282,13 +290,13 @@ public class NetworkService {
                 Socket clientSocket = new Socket(config.getHost(), config.getPort());
                 serviceInstance.setTcpClientSocket(clientSocket);
                 
-                logMsg = "[TCP Client] 成功连接到 " + serviceTypeDesc + ": " + config.getHost() + ":" + config.getPort();
+                logMsg = "[TCP客户端] 成功连接到 " + serviceTypeDesc + ": " + config.getHost() + ":" + config.getPort();
                 logger.info(logMsg);
                 notifyLogReceived(logMsg);
                 notifyConnectionStatus(true, config.getServiceType());
                 handleTcpConnection(clientSocket, serviceInstance);
             } catch (IOException e) {
-                logMsg = "[TCP Client] 连接 " + serviceTypeDesc + " 失败: " + config.getHost() + ":" + config.getPort() + ", 错误: " + e.getMessage();
+                logMsg = "[TCP客户端] 连接 " + serviceTypeDesc + " 失败: " + config.getHost() + ":" + config.getPort() + ", 错误: " + e.getMessage();
                 logger.error(logMsg, e);
                 notifyLogReceived(logMsg);
                 
@@ -297,7 +305,7 @@ public class NetworkService {
                 
                 // 如果是连接被拒绝错误，提供更具体的错误信息
                 if (e instanceof java.net.ConnectException) {
-                    String detailMsg = "[TCP Client] 连接被拒绝，可能的原因: 1.目标主机未运行对应服务 2.主机地址或端口配置错误 3.网络防火墙阻止连接";
+                    String detailMsg = "[TCP客户端] 连接被拒绝，可能的原因: 1.目标主机未运行对应服务 2.主机地址或端口配置错误 3.网络防火墙阻止连接";
                     logger.error(detailMsg);
                     notifyLogReceived(detailMsg);
                 }
@@ -315,7 +323,8 @@ public class NetworkService {
                 DatagramSocket udpSocket = new DatagramSocket(config.getPort());
                 serviceInstance.setUdpSocket(udpSocket);
                 
-                logger.info("UDP server started on port: " + config.getPort());
+                String serviceTypeDesc = config.getServiceType().getDescription();
+                logger.info(serviceTypeDesc + " UDP服务已启动，端口: " + config.getPort());
                 notifyConnectionStatus(true, config.getServiceType());
                 
                 byte[] buffer = new byte[1024];
@@ -327,15 +336,15 @@ public class NetworkService {
                         String receivedData = processReceivedData(buffer, packet.getLength(), config);
                         notifyDataReceived(receivedData, config.getServiceType());
                         String aliasInfo = config.getAlias() != null && !config.getAlias().isEmpty() ? "[别名: " + config.getAlias() + "] " : "";
-                        logger.info("Received UDP data from " + packet.getAddress().getHostAddress() + ":" + packet.getPort() + ": " + aliasInfo + receivedData);
+                        logger.info("收到来自 " + packet.getAddress().getHostAddress() + ":" + packet.getPort() + " 的UDP数据: " + aliasInfo + receivedData);
                     } catch (IOException e) {
                         if (serviceInstance.isRunning()) { // 只有在服务运行时才记录错误
-                            logger.warn("Error receiving UDP data: " + e.getMessage());
+                            logger.warn("接收UDP数据错误: " + e.getMessage());
                         }
                     }
                 }
             } catch (SocketException e) {
-                logger.error("Failed to start UDP server: " + e.getMessage(), e);
+                logger.error("启动UDP服务失败: " + e.getMessage(), e);
 
             }
         });
@@ -370,18 +379,18 @@ public class NetworkService {
                 if (config.getDataMode() == DataMode.HEX) {
                     // HEX模式：记录带空格的十六进制字符串，并添加原始无空格版本便于调试
                     String rawHexData = bytesToHex(buffer, bytesRead);
-                    logger.info("Received TCP data (HEX): " + aliasInfo + receivedData);
-                    logger.debug("Received TCP raw HEX (no spaces): " + aliasInfo + rawHexData);
+                    logger.info("收到TCP数据(HEX): " + aliasInfo + receivedData);
+                    logger.debug("收到TCP原始HEX数据(无空格): " + aliasInfo + rawHexData);
                 } else {
                     // ASCII模式：记录ASCII字符串，并同时记录十六进制形式以便调试
                     String hexData = bytesToHex(buffer, bytesRead);
-                    logger.info("Received TCP data (ASCII): " + aliasInfo + receivedData);
-                    logger.debug("Received TCP data (HEX): " + aliasInfo + hexData);
+                    logger.info("收到TCP数据(ASCII): " + aliasInfo + receivedData);
+                    logger.debug("收到TCP数据(HEX): " + aliasInfo + hexData);
                 }
             }
         } catch (IOException e) {
             if (serviceInstance.isRunning()) { // 只有在服务运行时才记录错误
-                logger.warn("Error handling TCP connection: " + e.getMessage());
+                logger.warn("处理TCP连接错误: " + e.getMessage());
             }
         } finally {
             // 连接关闭时减少计数并从集合中移除
@@ -399,7 +408,7 @@ public class NetworkService {
                     socket.close();
                 }
             } catch (IOException e) {
-                logger.warn("Failed to close TCP socket: " + e.getMessage());
+                logger.warn("关闭TCP套接字失败: " + e.getMessage());
             }
         }
     }
@@ -444,10 +453,10 @@ public class NetworkService {
     /**
      * 发送数据到指定服务类型
      */
-    public void sendData(String data, ServiceType serviceType) {
+    public void sendData(String data, TcpServiceEnum serviceType) {
         ServiceInstance instance = serviceInstances.get(serviceType);
         if (instance == null || !instance.isRunning()) {
-            logger.warn("Cannot send data to " + serviceType.getDescription() + ": network service not running");
+            logger.warn("无法发送数据到" + serviceType.getDescription() + ": 网络服务未运行");
             return;
         }
         
@@ -463,24 +472,24 @@ public class NetworkService {
             switch (config.getProtocolType()) {
                 case TCP_SERVER:
                     // TCP服务端需要知道目标客户端
-            logger.warn("TCP server cannot send data directly, need client information");
+            logger.warn(serviceType.getDescription() + " TCP服务端不能直接发送数据，需要客户端信息");
             // 可以在这里添加获取第一个连接的客户端并发送数据的逻辑
             if (!instance.getConnectedClients().isEmpty()) {
                 Socket clientSocket = instance.getConnectedClients().iterator().next();
                 try {
                     clientSocket.getOutputStream().write(bytes);
-                    logger.info("Sent TCP data to first connected client of " + serviceType.getDescription() + ": " + data);
+                    logger.info("已发送TCP数据到" + serviceType.getDescription() + "的第一个连接客户端: " + data);
                 } catch (IOException e) {
-                    logger.warn("Failed to send data to TCP client: " + e.getMessage());
+                    logger.warn("发送数据到TCP客户端失败: " + e.getMessage());
                 }
             }
             break;
                 case TCP_CLIENT:
                     if (instance.getTcpClientSocket() != null && instance.getTcpClientSocket().isConnected()) {
                         instance.getTcpClientSocket().getOutputStream().write(bytes);
-                        logger.info("Sent TCP data to " + serviceType.getDescription() + ": " + data);
+                        logger.info("已发送TCP数据到" + serviceType.getDescription() + ": " + data);
                     } else {
-                        logger.warn("TCP client for " + serviceType.getDescription() + " not connected");
+                        logger.warn(serviceType.getDescription() + "的TCP客户端未连接");
                     }
                     break;
                 case UDP:
@@ -488,14 +497,15 @@ public class NetworkService {
                         InetAddress address = InetAddress.getByName(config.getHost());
                         DatagramPacket packet = new DatagramPacket(bytes, bytes.length, address, config.getPort());
                         instance.getUdpSocket().send(packet);
-                        logger.info("Sent UDP data to " + serviceType.getDescription() + " at " + config.getHost() + ":" + config.getPort() + ": " + data);
+                        logger.info("已发送UDP数据到" + serviceType.getDescription() + "，地址: " + config.getHost() + ":" + config.getPort() + ": " + data);
                     }
-                    break;
+                break;
             }
-        } catch (Exception e) {
-            logger.warn("Failed to send data to " + serviceType.getDescription() + ": " + e.getMessage());
+        } catch (IOException e) {
+            logger.warn("发送数据到" + serviceType.getDescription() + "失败: " + e.getMessage());
         }
     }
+    
     
     /**
      * 将十六进制字符串转换为字节数组
@@ -547,7 +557,7 @@ public class NetworkService {
     /**
      * 通知数据接收（字符串格式）
      */
-    private void notifyDataReceived(String data, ServiceType serviceType) {
+    private void notifyDataReceived(String data, TcpServiceEnum serviceType) {
         // 通知所有监听器（只使用新版带服务类型的方法）
         for (NetworkListener networkListener : listeners) {
             try {
@@ -561,7 +571,7 @@ public class NetworkService {
     /**
      * 通知数据接收（字节数组格式）
      */
-    private void notifyDataReceived(byte[] data, ServiceType serviceType) {
+    private void notifyDataReceived(byte[] data, TcpServiceEnum serviceType) {
         // 通知所有监听器（只使用新版带服务类型的方法）
         for (NetworkListener networkListener : listeners) {
             try {
@@ -575,7 +585,7 @@ public class NetworkService {
     /**
      * 通知连接状态变化
      */
-    private void notifyConnectionStatus(boolean connected, ServiceType serviceType) {
+    private void notifyConnectionStatus(boolean connected, TcpServiceEnum serviceType) {
         // 通知所有监听器（包括旧的监听器，但避免重复通知）
         for (NetworkListener networkListener : listeners) {
             try {
@@ -626,7 +636,7 @@ public class NetworkService {
     /**
      * 通知连接数变化
      */
-    private void notifyConnectionCountChanged(int count, ServiceType serviceType) {
+    private void notifyConnectionCountChanged(int count, TcpServiceEnum serviceType) {
         // 通知旧的监听器（调用旧方法，保持兼容性）
         if (listener != null) {
             try {
@@ -662,10 +672,10 @@ public class NetworkService {
      * @param timeoutMs 等待超时时间（毫秒）
      * @return 接收到的响应数据，如果超时或出错则返回null
      */
-    public String sendDataAndWaitForResponse(String data, ServiceType serviceType, int timeoutMs) {
+    public String sendDataAndWaitForResponse(String data, TcpServiceEnum serviceType, int timeoutMs) {
         ServiceInstance instance = serviceInstances.get(serviceType);
         if (instance == null || !instance.isRunning()) {
-            logger.warn("Cannot send data to " + serviceType.getDescription() + ": network service not running");
+            logger.warn("无法发送数据到" + serviceType.getDescription() + ": 网络服务未运行");
             return null;
         }
         
@@ -680,18 +690,18 @@ public class NetworkService {
             
             switch (config.getProtocolType()) {
                 case TCP_SERVER:
-                    logger.warn("TCP server cannot send data and wait for response directly, need client information");
+                    logger.warn(serviceType.getDescription() + " TCP服务端不能直接发送数据并等待响应，需要客户端信息");
                     return null;
                 case TCP_CLIENT:
                     return sendTcpClientDataAndWaitResponse(instance, bytes, timeoutMs, config);
                 case UDP:
                     return sendUdpDataAndWaitResponse(instance, bytes, timeoutMs, config);
                 default:
-                    logger.warn("Unsupported protocol type: " + config.getProtocolType());
+                    logger.warn("不支持的协议类型: " + config.getProtocolType());
                     return null;
             }
         } catch (Exception e) {
-            logger.warn("Failed to send data and wait for response to " + serviceType.getDescription() + ": " + e.getMessage());
+            logger.warn("发送数据并等待" + serviceType.getDescription() + "响应失败: " + e.getMessage());
             return null;
         }
     }
@@ -703,7 +713,7 @@ public class NetworkService {
         try {
             Socket socket = instance.getTcpClientSocket();
             if (socket == null || !socket.isConnected()) {
-                logger.warn("TCP client for " + config.getServiceType().getDescription() + " not connected");
+                logger.warn("" + config.getServiceType().getDescription() + "的TCP客户端未连接");
                 return null;
             }
             
@@ -716,20 +726,20 @@ public class NetworkService {
             // 确保日志中使用正确的数据模式格式
             String logData = config.getDataMode() == DataMode.HEX ? bytesToHex(data, data.length) : 
                 (data.length > 100 ? "[太长，截断显示] " + new String(data, 0, 100, "UTF-8") + "..." : new String(data, "UTF-8"));
-            logger.info("Sent TCP data to " + config.getServiceType().getDescription() + ": " + logData);
+            logger.info("已发送TCP数据到" + config.getServiceType().getDescription() + ": " + logData);
             
             // 等待并读取响应
             byte[] buffer = new byte[1024];
             int bytesRead = socket.getInputStream().read(buffer);
             if (bytesRead > 0) {
                 String response = processReceivedData(buffer, bytesRead, config);
-                logger.info("Received TCP response from " + config.getServiceType().getDescription() + ": " + response);
+                logger.info("已收到来自" + config.getServiceType().getDescription() + "的TCP响应: " + response);
                 return response;
             }
         } catch (SocketTimeoutException e) {
-            logger.warn("TCP response timeout for " + config.getServiceType().getDescription());
+            logger.warn(config.getServiceType().getDescription() + "的TCP响应超时");
         } catch (Exception e) {
-            logger.warn("Error in TCP client communication: " + e.getMessage());
+            logger.warn(config.getServiceType().getDescription() + " TCP客户端通信错误: " + e.getMessage());
         }
         return null;
     }
@@ -741,7 +751,7 @@ public class NetworkService {
         try {
             DatagramSocket udpSocket = instance.getUdpSocket();
             if (udpSocket == null || udpSocket.isClosed()) {
-                logger.warn("UDP socket for " + config.getServiceType().getDescription() + " not available");
+                logger.warn(config.getServiceType().getDescription() + "的UDP套接字不可用");
                 return null;
             }
             
@@ -755,7 +765,7 @@ public class NetworkService {
             // 确保日志中使用正确的数据模式格式
             String logData = config.getDataMode() == DataMode.HEX ? bytesToHex(data, data.length) : 
                 (data.length > 100 ? "[太长，截断显示] " + new String(data, 0, 100, "UTF-8") + "..." : new String(data, "UTF-8"));
-            logger.info("Sent UDP data to " + config.getServiceType().getDescription() + " at " + config.getHost() + ":" + config.getPort() + ": " + logData);
+            logger.info("已发送UDP数据到" + config.getServiceType().getDescription() + "地址" + config.getHost() + ":" + config.getPort() + ": " + logData);
             
             // 等待并读取响应
             byte[] buffer = new byte[1024];
@@ -763,12 +773,12 @@ public class NetworkService {
             udpSocket.receive(receivePacket);
             
             String response = processReceivedData(buffer, receivePacket.getLength(), config);
-            logger.info("Received UDP response from " + receivePacket.getAddress().getHostAddress() + ":" + receivePacket.getPort() + ": " + response);
+            logger.info("已收到来自" + receivePacket.getAddress().getHostAddress() + ":" + receivePacket.getPort() + "的UDP响应: " + response);
             return response;
         } catch (SocketTimeoutException e) {
-            logger.warn("UDP response timeout for " + config.getServiceType().getDescription());
+            logger.warn(config.getServiceType().getDescription() + "的UDP响应超时");
         } catch (Exception e) {
-            logger.warn("Error in UDP communication: " + e.getMessage());
+            logger.warn(config.getServiceType().getDescription() + " UDP通信错误: " + e.getMessage());
         }
         return null;
     }
@@ -779,7 +789,7 @@ public class NetworkService {
      * @param serviceType 服务类型
      * @return 接收到的响应数据，如果超时或出错则返回null
      */
-    public String sendDataAndWaitForResponse(String data, ServiceType serviceType) {
+    public String sendDataAndWaitForResponse(String data, TcpServiceEnum serviceType) {
         return sendDataAndWaitForResponse(data, serviceType, 5000);
     }
 
