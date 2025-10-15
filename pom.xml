@@ -16,6 +16,7 @@
         <gson.version>2.10.1</gson.version>
         <sqlite.version>3.42.0.0</sqlite.version>
         <jssc.version>2.9.4</jssc.version>
+        <fastjson.version>2.0.33</fastjson.version>
     </properties>
 
     <dependencies>
@@ -26,11 +27,11 @@
             <version>${netty.version}</version>
         </dependency>
 
-        <!-- GSON for JSON processing -->
+        <!-- Fastjson for JSON processing -->
         <dependency>
-            <groupId>com.google.code.gson</groupId>
-            <artifactId>gson</artifactId>
-            <version>${gson.version}</version>
+            <groupId>com.alibaba</groupId>
+            <artifactId>fastjson</artifactId>
+            <version>${fastjson.version}</version>
         </dependency>
 
         <!-- SQLite JDBC for database -->
