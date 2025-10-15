@@ -3,6 +3,10 @@ package com.iot.plc.ui;
 import com.iot.plc.service.NetworkService;
 import com.iot.plc.service.ConfigService;
 import com.iot.plc.model.ConfigItem;
+import com.iot.plc.model.DataMode;
+import com.iot.plc.enumx.ProtocolType;
+import com.iot.plc.enumx.ServiceType;
+import com.iot.plc.config.NetworkConfig;
 import com.iot.plc.logger.Logger;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -22,7 +26,7 @@ public class NetworkConfigPanel extends VBox {
     // 使用我们统一的Logger类
     private static final Logger logger = Logger.getInstance();
     private Stage stage;
-    private NetworkService.Config config; // 统一使用NetworkService.Config
+    private NetworkConfig config; // 统一使用Config
     private ConfigType configType;
     
     // 配置类型枚举
@@ -195,35 +199,38 @@ public class NetworkConfigPanel extends VBox {
             String selectedProtocol = protocolComboBox.getValue();
             String dataModeStr = dataModeComboBox.getValue();
             
-            // 统一创建NetworkService.Config对象
-            NetworkService.ProtocolType protocolType;
+            // 统一创建Config对象
+            ProtocolType protocolType;
             switch (selectedProtocol) {
                 case "TCP服务端":
-                    protocolType = NetworkService.ProtocolType.TCP_SERVER;
+                    protocolType = ProtocolType.TCP_SERVER;
                     break;
                 case "TCP客户端":
-                    protocolType = NetworkService.ProtocolType.TCP_CLIENT;
+                    protocolType = ProtocolType.TCP_CLIENT;
                     break;
                 case "UDP":
-                    protocolType = NetworkService.ProtocolType.UDP;
+                    protocolType = ProtocolType.UDP;
                     break;
                 default:
                     showError("无效的协议类型");
                     return;
             }
             
-            NetworkService.DataMode dataMode = dataModeStr.equals("ASCII")
-                    ? NetworkService.DataMode.ASCII
-                    : NetworkService.DataMode.HEX;
+            DataMode dataMode = dataModeStr.equals("ASCII")
+                    ? DataMode.ASCII
+                    : DataMode.HEX;
             
             // 根据配置类型设置服务类型
-            NetworkService.ServiceType serviceType = configType == ConfigType.BURNER 
-                    ? NetworkService.ServiceType.BURNER 
-                    : NetworkService.ServiceType.SCANNER;
+            ServiceType serviceType = configType == ConfigType.BURNER 
+                    ? ServiceType.BURNER 
+                    : ServiceType.SCANNER;
             
             // 获取别名
             String alias = aliasTextField.getText().trim();
-            config = new NetworkService.Config(protocolType, host, port, dataMode, serviceType, alias);
+            config = new NetworkConfig(serviceType, host, port);
+            config.setProtocolType(protocolType);
+            config.setDataMode(dataMode);
+            config.setAlias(alias);
             
             // 保存配置到服务
             saveToService();
@@ -341,20 +348,16 @@ public class NetworkConfigPanel extends VBox {
             // 如果从配置管理系统加载失败，则从NetworkService加载配置
             if (!loadedFromConfigService) {
                 NetworkService service = NetworkService.getInstance();
-                NetworkService.Config currentConfig = service.getConfig();
+                NetworkConfig currentConfig = service.getConfig();
                 if (currentConfig != null) {
                     // 根据配置类型加载相应配置
                     if (configType == ConfigType.BURNER) {
                         loadBurnerConfig(currentConfig);
                     } else {
                         // 对于扫码机配置，我们需要创建一个新的Config对象并设置正确的ServiceType
-                        NetworkService.Config scannerConfig = new NetworkService.Config(
-                                currentConfig.getProtocolType(),
-                                currentConfig.getHost(),
-                                currentConfig.getPort(),
-                                currentConfig.getDataMode(),
-                                NetworkService.ServiceType.SCANNER
-                        );
+                        NetworkConfig scannerConfig = new NetworkConfig(ServiceType.SCANNER, currentConfig.getHost(), currentConfig.getPort());
+                        scannerConfig.setProtocolType(currentConfig.getProtocolType());
+                        scannerConfig.setDataMode(currentConfig.getDataMode());
                         loadScannerConfig(scannerConfig);
                     }
                 }
@@ -428,7 +431,7 @@ public class NetworkConfigPanel extends VBox {
     /**
      * 加载烧录机配置
      */
-    private void loadBurnerConfig(NetworkService.Config currentConfig) {
+    private void loadBurnerConfig(NetworkConfig currentConfig) {
         // 加载协议类型
         switch (currentConfig.getProtocolType()) {
             case TCP_SERVER:
@@ -447,7 +450,7 @@ public class NetworkConfigPanel extends VBox {
         portTextField.setText(String.valueOf(currentConfig.getPort()));
         
         // 加载数据模式
-        dataModeComboBox.setValue(currentConfig.getDataMode() == NetworkService.DataMode.ASCII ? "ASCII" : "HEX");
+        dataModeComboBox.setValue(currentConfig.getDataMode() == DataMode.ASCII ? "ASCII" : "HEX");
         
         // 设置别名（如果有）
         aliasTextField.setText(currentConfig.getAlias() != null ? currentConfig.getAlias() : "");
@@ -458,7 +461,7 @@ public class NetworkConfigPanel extends VBox {
     /**
      * 加载扫码机配置
      */
-    private void loadScannerConfig(NetworkService.Config currentConfig) {
+    private void loadScannerConfig(NetworkConfig currentConfig) {
         // 加载协议类型
         switch (currentConfig.getProtocolType()) {
             case TCP_SERVER:
@@ -477,7 +480,7 @@ public class NetworkConfigPanel extends VBox {
         portTextField.setText(String.valueOf(currentConfig.getPort()));
         
         // 加载数据模式
-        dataModeComboBox.setValue(currentConfig.getDataMode() == NetworkService.DataMode.ASCII ? "ASCII" : "HEX");
+        dataModeComboBox.setValue(currentConfig.getDataMode() == DataMode.ASCII ? "ASCII" : "HEX");
         
         // 设置别名（如果有）
         aliasTextField.setText(currentConfig.getAlias() != null ? currentConfig.getAlias() : "");
@@ -496,14 +499,14 @@ public class NetworkConfigPanel extends VBox {
     /**
      * 获取烧录机配置
      */
-    public NetworkService.Config getBurnerConfig() {
-        return configType == ConfigType.BURNER && config instanceof NetworkService.Config ? (NetworkService.Config) config : null;
+    public NetworkConfig getBurnerConfig() {
+        return configType == ConfigType.BURNER && config != null ? config : null;
     }
     
     /**
      * 获取扫码机配置
      */
-    public NetworkService.Config getScannerConfig() {
+    public NetworkConfig getScannerConfig() {
         return configType == ConfigType.SCANNER ? config : null;
     }
     

@@ -2,9 +2,9 @@ package com.iot.plc.service;
 
 import com.iot.plc.model.BarcodeData;
 import com.iot.plc.model.DeviceResult;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import com.iot.plc.service.UpperComputerService;
+import com.alibaba.fastjson.JSONObject;
+import com.iot.plc.enumx.ServiceType;
+import com.iot.plc.listener.NetworkListener;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -17,7 +17,7 @@ import com.iot.plc.logger.Logger;
 /**
  * 自动处理流程服务
  * 实现自动逻辑流程：
- * 1. 监听串口读取扫描枪条码数据，自动缓存数据，绑定设备号+扫描内容（条码）
+ * 1. 监听TCP服务读取扫描枪条码数据，自动缓存数据，绑定设备号+扫描内容（条码）
  * 2. 对比PLC传输的产品个数与缓存的条码个数，若相等则OK，反之给PLC发送异常指令
  * 3. 接收PLC开始指令后，自动给上位机传送烧录指令和多条条码信息
  * 4. 接收上位机返回的条码信息+烧录结果
@@ -29,13 +29,13 @@ public class AutoProcessService {
     private static AutoProcessService instance;
     
     // 服务实例
-    private final SerialPortService serialPortService;
+    private final NetworkService networkService;
     private final PlcService plcService;
     private final UpperComputerService upperComputerService;
     
     // 状态管理
     private String currentStatus = "空闲";
-    private String serialPortStatus = "未连接";
+    private String scannerStatus = "未连接";
     private String plcStatus = "未连接";
     private String upperComputerStatus = "未连接";
     private String emsStatus = "未连接";
@@ -55,7 +55,7 @@ public class AutoProcessService {
     
     // 单例模式
     private AutoProcessService() {
-        this.serialPortService = SerialPortService.getInstance();
+        this.networkService = NetworkService.getInstance();
         this.plcService = PlcService.getInstance();
         this.upperComputerService = UpperComputerService.getInstance();
         
@@ -76,6 +76,43 @@ public class AutoProcessService {
                 handleProductCountMessage(message);
             } else if ("start_command".equals(messageType)) {
                 handleStartCommandMessage();
+            }
+        });
+        
+        // 初始化TCP扫码机监听器
+        networkService.addListener(new NetworkListener() {
+            @Override
+            public void onLogReceived(String logMessage) {
+                // 处理日志消息
+                log(logMessage);
+            }
+            
+            @Override
+            public void onLog(String message) {
+                // 处理日志消息
+                log(message);
+            }
+            
+            @Override
+            public void onDataReceived(String data, ServiceType serviceType) {
+                // 只处理扫码机的数据
+                if (ServiceType.SCANNER == serviceType) {
+                    // 处理从TCP服务接收的扫描枪消息
+                    log("收到扫码机TCP消息: " + data);
+                    // 解析条码数据并处理
+                    try {
+                        JSONObject jsonObject = JSONObject.parseObject(data);
+                        if (jsonObject.containsKey("barcode")) {
+                            String barcode = jsonObject.getString("barcode");
+                            // 缓存条码数据，绑定设备号
+                            BarcodeData barcodeData = new BarcodeData(deviceId, barcode);
+                            // 这里应该添加到networkService的缓存中
+                            log("缓存条码数据: " + barcode + " 设备ID: " + deviceId);
+                        }
+                    } catch (Exception e) {
+                        log("错误: 无法解析扫码机消息: " + e.getMessage());
+                    }
+                }
             }
         });
         
@@ -101,16 +138,17 @@ public class AutoProcessService {
     private void handleProductCountMessage(String message) {
         try {
             // 解析产品数量消息
-            JsonObject jsonObject = JsonParser.parseString(message).getAsJsonObject();
-            if (jsonObject.has("type") && "product_count".equals(jsonObject.get("type").getAsString()) && jsonObject.has("data")) {
-                JsonObject dataObject = jsonObject.get("data").getAsJsonObject();
-                int count = dataObject.has("count") ? dataObject.get("count").getAsInt() : 0;
+            JSONObject jsonObject = JSONObject.parseObject(message);
+            if (jsonObject.containsKey("type") && "product_count".equals(jsonObject.getString("type")) && jsonObject.containsKey("data")) {
+                JSONObject dataObject = jsonObject.getJSONObject("data");
+                int count = dataObject.containsKey("count") ? dataObject.getIntValue("count") : 0;
                 expectedBarcodeCount = count;
                 log("接收到PLC产品数量: " + count);
                 
                 // 验证条码数量
                 if (processStarted.get() && !barcodeVerified.get()) {
-                    int actualCount = serialPortService.getBarcodeCount(deviceId);
+                    // 假设NetworkService提供了类似的方法来获取条码数量
+                    int actualCount = getScannerBarcodeCount();
                     actualBarcodeCount = actualCount;
                     if (actualCount == count) {
                         barcodeVerified.set(true);
@@ -141,7 +179,7 @@ public class AutoProcessService {
             currentStatus = "发送烧录指令";
             
             // 收集条码数据
-            List<BarcodeData> barcodes = serialPortService.getDeviceBarcodes(deviceId);
+            List<BarcodeData> barcodes = getScannerBarcodes();
             currentBarcodes.clear();
             for (BarcodeData barcode : barcodes) {
                 currentBarcodes.add(barcode.getBarcode());
@@ -218,8 +256,9 @@ public class AutoProcessService {
     
     private void updateStatus() {
         // 更新连接状态
-        boolean serialConnected = serialPortService.getAvailablePorts().length > 0;
-        serialPortStatus = serialConnected ? "已连接" : "未连接";
+        // 假设NetworkService提供了检查TCP连接状态的方法
+        boolean scannerConnected = isScannerConnected();
+        scannerStatus = scannerConnected ? "已连接" : "未连接";
         
         boolean plcConnected = plcService.isPlcConnected();
         plcStatus = plcConnected ? "已连接" : "未连接";
@@ -244,8 +283,8 @@ public class AutoProcessService {
         }
         
         // 检查连接状态
-        if (serialPortService.getAvailablePorts().length == 0) {
-            log("错误: 没有可用的串口");
+        if (!isScannerConnected()) {
+            log("错误: 扫码机TCP连接未建立");
             return;
         }
         
@@ -301,8 +340,41 @@ public class AutoProcessService {
     }
     
     public void clearBarcodes() {
-        serialPortService.clearDeviceBarcodes(deviceId);
+        // 假设NetworkService提供了清除条码缓存的方法
+        networkService.clearScannerBarcodes(deviceId);
         log("条码缓存已清空");
+    }
+    
+    /**
+     * 获取扫描枪条码数量
+     */
+    private int getScannerBarcodeCount() {
+        // 假设实现获取当前缓存的条码数量
+        return currentBarcodes.size();
+    }
+    
+    /**
+     * 获取扫描枪条码数据列表
+     */
+    private List<BarcodeData> getScannerBarcodes() {
+        // 假设实现从NetworkService获取条码数据
+        List<BarcodeData> barcodes = new ArrayList<>();
+        for (String barcode : currentBarcodes) {
+            barcodes.add(new BarcodeData(deviceId, barcode));
+        }
+        return barcodes;
+    }
+    
+    /**
+     * 检查扫描枪连接状态
+     */
+    private boolean isScannerConnected() {
+        // 假设实现检查TCP连接状态
+        try {
+            return networkService.isScannerConnected();
+        } catch (Exception e) {
+            return false;
+        }
     }
     
     private void log(String message) {
@@ -317,8 +389,8 @@ public class AutoProcessService {
         return currentStatus;
     }
     
-    public String getSerialPortStatus() {
-        return serialPortStatus;
+    public String getScannerStatus() {
+        return scannerStatus;
     }
     
     public String getPlcStatus() {

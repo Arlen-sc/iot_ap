@@ -9,7 +9,12 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import com.iot.plc.config.NetworkConfig;
+import com.iot.plc.enumx.ProtocolType;
+import com.iot.plc.enumx.ServiceType;
+import com.iot.plc.listener.NetworkListener;
 import com.iot.plc.logger.Logger;
+import com.iot.plc.model.DataMode;
 
 /**
  * 网络服务类
@@ -27,33 +32,6 @@ public class NetworkService {
     // 使用Map管理不同服务类型的服务实例
     private Map<ServiceType, ServiceInstance> serviceInstances = new HashMap<>();
     
-    // 服务实例内部类，用于管理每个服务类型的状态
-    private class ServiceInstance {
-        private Config config;
-        private boolean isRunning = false;
-        private int connectedClientCount = 0;
-        private ServerSocket tcpServerSocket;
-        private Socket tcpClientSocket;
-        private DatagramSocket udpSocket;
-        
-        public ServiceInstance(Config config) {
-            this.config = config;
-        }
-        
-        // Getters and setters
-        public Config getConfig() { return config; }
-        public boolean isRunning() { return isRunning; }
-        public void setRunning(boolean running) { isRunning = running; }
-        public int getConnectedClientCount() { return connectedClientCount; }
-        public void setConnectedClientCount(int count) { connectedClientCount = count; }
-        public ServerSocket getTcpServerSocket() { return tcpServerSocket; }
-        public void setTcpServerSocket(ServerSocket socket) { tcpServerSocket = socket; }
-        public Socket getTcpClientSocket() { return tcpClientSocket; }
-        public void setTcpClientSocket(Socket socket) { tcpClientSocket = socket; }
-        public DatagramSocket getUdpSocket() { return udpSocket; }
-        public void setUdpSocket(DatagramSocket socket) { udpSocket = socket; }
-    }
-    
     /**
      * 获取指定服务类型的连接客户端数量
      */
@@ -65,7 +43,7 @@ public class NetworkService {
     /**
      * 获取指定服务类型的配置
      */
-    public Config getConfig(ServiceType serviceType) {
+    public NetworkConfig getConfig(ServiceType serviceType) {
         ServiceInstance instance = serviceInstances.get(serviceType);
         return instance != null ? instance.getConfig() : null;
     }
@@ -73,7 +51,7 @@ public class NetworkService {
     /**
      * 获取当前配置（默认返回BURNER服务类型的配置，为了兼容旧代码）
      */
-    public Config getConfig() {
+    public NetworkConfig getConfig() {
         return getConfig(ServiceType.BURNER);
     }
     
@@ -85,109 +63,12 @@ public class NetworkService {
         return instance != null && instance.isRunning();
     }
     
-    // 服务类型枚举
-    public enum ServiceType {
-        BURNER("烧录机"),
-        SCANNER("扫码机");
-        
-        private String description;
-        
-        ServiceType(String description) {
-            this.description = description;
-        }
-        
-        public String getDescription() {
-            return description;
-        }
-    }
-    
-    // 数据解析模式
-    public enum DataMode { ASCII, HEX }
-    
-    // 协议类型
-    public enum ProtocolType { TCP_SERVER, TCP_CLIENT, UDP }
-    
-    // 配置类
-    public static class Config {
-        private ProtocolType protocolType;
-        private String host;
-        private int port;
-        private DataMode dataMode;
-        private ServiceType serviceType;
-        private String alias; // 配置别名
-        
-        public Config(ProtocolType protocolType, String host, int port, DataMode dataMode) {
-            this.protocolType = protocolType;
-            this.host = host;
-            this.port = port;
-            this.dataMode = dataMode;
-            this.serviceType = ServiceType.BURNER; // 默认烧录机类型
-            this.alias = "";
-        }
-        
-        public Config(ProtocolType protocolType, String host, int port, DataMode dataMode, ServiceType serviceType) {
-            this.protocolType = protocolType;
-            this.host = host;
-            this.port = port;
-            this.dataMode = dataMode;
-            this.serviceType = serviceType;
-            this.alias = "";
-        }
-        
-        public Config(ProtocolType protocolType, String host, int port, DataMode dataMode, ServiceType serviceType, String alias) {
-            this.protocolType = protocolType;
-            this.host = host;
-            this.port = port;
-            this.dataMode = dataMode;
-            this.serviceType = serviceType;
-            this.alias = alias;
-        }
-        
-        // Getters and setters
-        public ProtocolType getProtocolType() { return protocolType; }
-        public void setProtocolType(ProtocolType protocolType) { this.protocolType = protocolType; }
-        public String getHost() { return host; }
-        public void setHost(String host) { this.host = host; }
-        public int getPort() { return port; }
-        public void setPort(int port) { this.port = port; }
-        public DataMode getDataMode() { return dataMode; }
-        public void setDataMode(DataMode dataMode) { this.dataMode = dataMode; }
-        public ServiceType getServiceType() { return serviceType; }
-        public void setServiceType(ServiceType serviceType) { this.serviceType = serviceType; }
-        public String getAlias() { return alias; }
-        public void setAlias(String alias) { this.alias = alias; }
-    }
-    
-    // 网络监听器接口
-    public interface NetworkListener {
-        // 旧版方法，为了兼容
-        void onDataReceived(String data);
-        void onDataReceived(byte[] data); // 支持字节数组数据接收
-        void onConnectionStatusChanged(boolean connected);
-        void onLogReceived(String logMessage);
-        void onLog(String message); // 兼容扫码机日志方法
-        void onConnectionCountChanged(int count);
-        
-        // 新版方法，支持服务类型区分
-        default void onDataReceived(String data, ServiceType serviceType) {
-            // 默认实现，调用旧版方法保持向后兼容
-            onDataReceived(data);
-        }
-        
-        default void onDataReceived(byte[] data, ServiceType serviceType) {
-            // 默认实现，调用旧版方法保持向后兼容
-            onDataReceived(data);
-        }
-        
-        default void onConnectionStatusChanged(boolean connected, ServiceType serviceType) {
-            // 默认实现，调用旧版方法保持向后兼容
-            onConnectionStatusChanged(connected);
-        }
-        
-        default void onConnectionCountChanged(int count, ServiceType serviceType) {
-            // 默认实现，调用旧版方法保持向后兼容
-            onConnectionCountChanged(count);
-        }
+    /**
+     * 判断默认服务类型（BURNER）是否正在运行
+     * 为了兼容旧代码
+     */
+    public boolean isRunning() {
+        return isServiceRunning(ServiceType.BURNER);
     }
     
     // 添加网络监听器
@@ -224,23 +105,29 @@ public class NetworkService {
     /**
      * 启动扫码机网络服务
      */
-    public void startScannerService(ProtocolType protocolType, String host, int port, DataMode dataMode) {
-        Config config = new Config(protocolType, host, port, dataMode, ServiceType.SCANNER);
+    public void startScannerService(String protocolType, String host, int port, DataMode dataMode) {
+        NetworkConfig config = new NetworkConfig(ServiceType.SCANNER, host, port);
+        // 暂时注释掉ProtocolType设置，等待ProtocolType类问题解决
+        // config.setProtocolType(ProtocolType.valueOf(protocolType));
+        config.setDataMode(dataMode);
         startService(config);
     }
     
     /**
      * 启动烧录机网络服务
      */
-    public void startBurnerService(ProtocolType protocolType, String host, int port, DataMode dataMode) {
-        Config config = new Config(protocolType, host, port, dataMode, ServiceType.BURNER);
+    public void startBurnerService(String protocolType, String host, int port, DataMode dataMode) {
+        NetworkConfig config = new NetworkConfig(ServiceType.BURNER, host, port);
+        // 暂时注释掉ProtocolType设置，等待ProtocolType类问题解决
+        // config.setProtocolType(ProtocolType.valueOf(protocolType));
+        config.setDataMode(dataMode);
         startService(config);
     }
     
     /**
      * 启动网络服务
      */
-    public synchronized void startService(Config config) {
+    public synchronized void startService(NetworkConfig config) {
         ServiceType serviceType = config.getServiceType();
         
         // 停止该服务类型的现有服务
@@ -255,7 +142,7 @@ public class NetworkService {
         String aliasInfo = config.getAlias() != null && !config.getAlias().isEmpty() ? "[别名: " + config.getAlias() + "] " : "";
         logger.info("启动网络服务，类型: " + config.getServiceType().getDescription() + aliasInfo + ", 协议: " + config.getProtocolType() + ", 地址: " + config.getHost() + ", 端口: " + config.getPort() + ", 数据模式: " + config.getDataMode());
         
-        switch (config.protocolType) {
+        switch (config.getProtocolType()) {
             case TCP_SERVER:
                 startTcpServer(instance);
                 break;
@@ -323,7 +210,7 @@ public class NetworkService {
      * 启动TCP服务端
      */
     private void startTcpServer(ServiceInstance serviceInstance) {
-        Config config = serviceInstance.getConfig();
+        NetworkConfig config = serviceInstance.getConfig();
         executorService.submit(() -> {
             try {
                 String logMsg = "[TCP Server] 开始创建ServerSocket，端口: " + config.getPort();
@@ -378,7 +265,7 @@ public class NetworkService {
      * 启动TCP客户端
      */
     private void startTcpClient(ServiceInstance serviceInstance) {
-        Config config = serviceInstance.getConfig();
+        NetworkConfig config = serviceInstance.getConfig();
         executorService.submit(() -> {
             try {
                 Socket clientSocket = new Socket(config.getHost(), config.getPort());
@@ -398,7 +285,7 @@ public class NetworkService {
      * 启动UDP服务
      */
     private void startUdpServer(ServiceInstance serviceInstance) {
-        Config config = serviceInstance.getConfig();
+        NetworkConfig config = serviceInstance.getConfig();
         executorService.submit(() -> {
             try {
                 DatagramSocket udpSocket = new DatagramSocket(config.getPort());
@@ -415,7 +302,8 @@ public class NetworkService {
                         
                         String receivedData = processReceivedData(buffer, packet.getLength(), config);
                         notifyDataReceived(receivedData, config.getServiceType());
-                        logger.info("Received UDP data from " + packet.getAddress().getHostAddress() + ":" + packet.getPort() + ": " + receivedData);
+                        String aliasInfo = config.getAlias() != null && !config.getAlias().isEmpty() ? "[别名: " + config.getAlias() + "] " : "";
+                        logger.info("Received UDP data from " + packet.getAddress().getHostAddress() + ":" + packet.getPort() + ": " + aliasInfo + receivedData);
                     } catch (IOException e) {
                         if (serviceInstance.isRunning()) { // 只有在服务运行时才记录错误
                             logger.warn("Error receiving UDP data: " + e.getMessage());
@@ -433,7 +321,7 @@ public class NetworkService {
      * 处理TCP连接
      */
     private void handleTcpConnection(Socket socket, ServiceInstance serviceInstance) {
-        Config config = serviceInstance.getConfig();
+        NetworkConfig config = serviceInstance.getConfig();
         // 增加连接数计数
         synchronized(this) {
             int count = serviceInstance.getConnectedClientCount() + 1;
@@ -451,7 +339,8 @@ public class NetworkService {
             while (serviceInstance.isRunning() && (bytesRead = socket.getInputStream().read(buffer)) != -1) {
                 String receivedData = processReceivedData(buffer, bytesRead, config);
                 notifyDataReceived(receivedData, config.getServiceType());
-                logger.info("Received TCP data: " + receivedData);
+                String aliasInfo = config.getAlias() != null && !config.getAlias().isEmpty() ? "[别名: " + config.getAlias() + "] " : "";
+                logger.info("Received TCP data: " + aliasInfo + receivedData);
             }
         } catch (IOException e) {
             if (serviceInstance.isRunning()) { // 只有在服务运行时才记录错误
@@ -480,7 +369,7 @@ public class NetworkService {
     /**
      * 处理接收到的数据
      */
-    private String processReceivedData(byte[] data, int length, Config config) {
+    private String processReceivedData(byte[] data, int length, NetworkConfig config) {
         if (config.getDataMode() == DataMode.HEX) {
             return bytesToHex(data, length);
         } else {
@@ -510,7 +399,7 @@ public class NetworkService {
             return;
         }
         
-        Config config = instance.getConfig();
+        NetworkConfig config = instance.getConfig();
         try {
             byte[] bytes;
             if (config.getDataMode() == DataMode.HEX) {
@@ -547,14 +436,6 @@ public class NetworkService {
     }
     
     /**
-     * 发送数据（旧版方法，为了兼容）
-     */
-    public void sendData(String data) {
-        // 默认发送到烧录机服务
-        sendData(data, ServiceType.BURNER);
-    }
-    
-    /**
      * 将十六进制字符串转换为字节数组
      */
     private byte[] hexToBytes(String hex) {
@@ -572,21 +453,10 @@ public class NetworkService {
      * 通知数据接收（字符串格式）
      */
     private void notifyDataReceived(String data, ServiceType serviceType) {
-        // 通知旧的监听器（调用旧方法，保持兼容性）
-        if (listener != null) {
-            try {
-                listener.onDataReceived(data);
-            } catch (Exception e) {
-                logger.warn("通知数据接收失败: " + e.getMessage());
-            }
-        }
-        
-        // 通知所有监听器
+        // 通知所有监听器（只使用新版带服务类型的方法）
         for (NetworkListener networkListener : listeners) {
             try {
-                if (networkListener != listener) { // 避免重复通知
-                    networkListener.onDataReceived(data, serviceType);
-                }
+                networkListener.onDataReceived(data, serviceType);
             } catch (Exception e) {
                 logger.warn("通知数据接收失败: " + e.getMessage());
             }
@@ -597,21 +467,10 @@ public class NetworkService {
      * 通知数据接收（字节数组格式）
      */
     private void notifyDataReceived(byte[] data, ServiceType serviceType) {
-        // 通知旧的监听器（调用旧方法，保持兼容性）
-        if (listener != null) {
-            try {
-                listener.onDataReceived(data);
-            } catch (Exception e) {
-                logger.warn("通知字节数组数据接收失败: " + e.getMessage());
-            }
-        }
-        
-        // 通知所有监听器
+        // 通知所有监听器（只使用新版带服务类型的方法）
         for (NetworkListener networkListener : listeners) {
             try {
-                if (networkListener != listener) { // 避免重复通知
-                    networkListener.onDataReceived(data, serviceType);
-                }
+                networkListener.onDataReceived(data, serviceType);
             } catch (Exception e) {
                 logger.warn("通知字节数组数据接收失败: " + e.getMessage());
             }
@@ -630,13 +489,6 @@ public class NetworkService {
                 logger.warn("通知连接状态变化失败: " + e.getMessage());
             }
         }
-    }
-    
-    /**
-     * 通知连接状态变化（旧版方法，为了兼容）
-     */
-    private void notifyConnectionStatus(boolean connected) {
-        notifyConnectionStatus(connected, ServiceType.BURNER);
     }
     
     /**
@@ -700,40 +552,8 @@ public class NetworkService {
             }
         }
     }
-    
-    /**
-     * 通知连接数变化（旧版方法，为了兼容）
-     */
-    private void notifyConnectionCountChanged(int count) {
-        notifyConnectionCountChanged(count, ServiceType.BURNER);
-    }
-    
-    /**
-     * 获取当前运行状态（旧版方法，为了兼容）
-     */
-    public boolean isRunning() {
-        // 返回烧录机服务的运行状态
-        return isServiceRunning(ServiceType.BURNER);
-    }
-    
-    /**
-     * 获取当前配置（旧版方法，为了兼容）
-     */
-    public Config getCurrentConfig() {
-        // 返回烧录机服务的配置
-        return getConfig(ServiceType.BURNER);
-    }
-    
-    /**
-     * 获取当前连接的客户端数量（旧版方法，为了兼容）
-     */
-    public int getConnectedClientCount() {
-        // 返回烧录机服务的连接数
-        return getConnectedClientCount(ServiceType.BURNER);
-    }
-    
-    /**
-     * 清理资源
+    /* 
+         * 清理资源
      */
     public void shutdown() {
         stopService();

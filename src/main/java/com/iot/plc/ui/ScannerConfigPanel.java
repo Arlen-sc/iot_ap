@@ -3,6 +3,10 @@ package com.iot.plc.ui;
 import com.iot.plc.service.NetworkService;
 import com.iot.plc.service.ConfigService;
 import com.iot.plc.model.ConfigItem;
+import com.iot.plc.model.DataMode;
+import com.iot.plc.enumx.ProtocolType;
+import com.iot.plc.enumx.ServiceType;
+import com.iot.plc.config.NetworkConfig;
 import com.iot.plc.logger.Logger;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -22,7 +26,7 @@ public class ScannerConfigPanel extends VBox {
     // 使用统一的Logger类
     private static final Logger logger = Logger.getInstance();
     private Stage stage;
-    private NetworkService.Config config;
+    private NetworkConfig config;
     
     // UI组件
     private ComboBox<String> protocolComboBox;
@@ -155,17 +159,17 @@ public class ScannerConfigPanel extends VBox {
             }
             
             // 获取协议类型
-            NetworkService.ProtocolType protocolType;
+            ProtocolType protocolType;
             String selectedProtocol = protocolComboBox.getValue();
             switch (selectedProtocol) {
                 case "TCP服务端":
-                    protocolType = NetworkService.ProtocolType.TCP_SERVER;
+                    protocolType = ProtocolType.TCP_SERVER;
                     break;
                 case "TCP客户端":
-                    protocolType = NetworkService.ProtocolType.TCP_CLIENT;
+                    protocolType = ProtocolType.TCP_CLIENT;
                     break;
                 case "UDP":
-                    protocolType = NetworkService.ProtocolType.UDP;
+                    protocolType = ProtocolType.UDP;
                     break;
                 default:
                     showError("无效的协议类型");
@@ -173,12 +177,14 @@ public class ScannerConfigPanel extends VBox {
             }
             
             // 获取数据模式
-            NetworkService.DataMode dataMode = dataModeComboBox.getValue().equals("ASCII")
-                    ? NetworkService.DataMode.ASCII
-                    : NetworkService.DataMode.HEX;
+            DataMode dataMode = dataModeComboBox.getValue().equals("ASCII")
+                    ? DataMode.ASCII
+                    : DataMode.HEX;
             
             // 创建配置对象，设置服务类型为扫码机
-            config = new NetworkService.Config(protocolType, host, port, dataMode, NetworkService.ServiceType.SCANNER);
+            config = new NetworkConfig(ServiceType.SCANNER, host, port);
+            config.setProtocolType(protocolType);
+            config.setDataMode(dataMode);
             
             // 保存配置到服务
             saveToService();
@@ -356,9 +362,11 @@ public class ScannerConfigPanel extends VBox {
             
             // 创建配置对象
             int port = Integer.parseInt(portStr);
-            NetworkService.ProtocolType protocolType = NetworkService.ProtocolType.valueOf(protocol);
-            NetworkService.DataMode dataModeType = NetworkService.DataMode.valueOf(dataMode);
-            config = new NetworkService.Config(protocolType, host, port, dataModeType, NetworkService.ServiceType.SCANNER);
+            ProtocolType protocolType = ProtocolType.valueOf(protocol);
+            DataMode dataModeType = DataMode.valueOf(dataMode);
+            config = new NetworkConfig(ServiceType.SCANNER, host, port);
+            config.setProtocolType(protocolType);
+            config.setDataMode(dataModeType);
             
             logger.info("从配置管理系统加载扫码机网络配置成功");
             return true;
@@ -379,7 +387,7 @@ public class ScannerConfigPanel extends VBox {
     /**
      * 获取配置
      */
-    public NetworkService.Config getConfig() {
+    public NetworkConfig getConfig() {
         return config;
     }
 }
