@@ -46,12 +46,22 @@ public class ConfigItem {
         this.configValue = configValue;
     }
 
-    public String getDescription() {
+    public String getConfigDescription() {
         return description;
     }
 
-    public void setDescription(String description) {
+    public void setConfigDescription(String description) {
         this.description = description;
+    }
+    
+    // 添加getDescription()方法作为别名，保持兼容性
+    public String getDescription() {
+        return getConfigDescription();
+    }
+    
+    // 添加setDescription()方法作为别名，保持兼容性
+    public void setDescription(String description) {
+        setConfigDescription(description);
     }
 
     public String getDataType() {
@@ -90,4 +100,9 @@ public class ConfigItem {
                 ", createdAt=" + createdAt +
                 '}';
     }
+
+    public void setConfigType(String string) {
+        
+    }
+
 }

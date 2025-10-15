@@ -10,7 +10,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import com.iot.plc.config.NetworkConfig;
-import com.iot.plc.enumx.ProtocolType;
 import com.iot.plc.enumx.ServiceType;
 import com.iot.plc.listener.NetworkListener;
 import com.iot.plc.logger.Logger;
@@ -83,10 +82,17 @@ public class NetworkService {
         listeners.remove(listener);
     }
     
+    /**
+     * 私有构造函数，防止外部实例化
+     */
     private NetworkService() {
         executorService = Executors.newCachedThreadPool();
     }
     
+    /**
+     * 获取网络服务单例实例
+     * @return 网络服务实例
+     */
     public static NetworkService getInstance() {
         return instance;
     }
@@ -267,16 +273,34 @@ public class NetworkService {
     private void startTcpClient(ServiceInstance serviceInstance) {
         NetworkConfig config = serviceInstance.getConfig();
         executorService.submit(() -> {
+            String serviceTypeDesc = config.getServiceType().getDescription();
+            String logMsg = "[TCP Client] 尝试连接到 " + serviceTypeDesc + ": " + config.getHost() + ":" + config.getPort();
+            logger.info(logMsg);
+            notifyLogReceived(logMsg);
+            
             try {
                 Socket clientSocket = new Socket(config.getHost(), config.getPort());
                 serviceInstance.setTcpClientSocket(clientSocket);
                 
-                logger.info("TCP client connected to: " + config.getHost() + ":" + config.getPort());
+                logMsg = "[TCP Client] 成功连接到 " + serviceTypeDesc + ": " + config.getHost() + ":" + config.getPort();
+                logger.info(logMsg);
+                notifyLogReceived(logMsg);
                 notifyConnectionStatus(true, config.getServiceType());
                 handleTcpConnection(clientSocket, serviceInstance);
             } catch (IOException e) {
-                logger.error("Failed to connect to TCP server: " + e.getMessage(), e);
-
+                logMsg = "[TCP Client] 连接 " + serviceTypeDesc + " 失败: " + config.getHost() + ":" + config.getPort() + ", 错误: " + e.getMessage();
+                logger.error(logMsg, e);
+                notifyLogReceived(logMsg);
+                
+                // 通知连接状态为断开
+                notifyConnectionStatus(false, config.getServiceType());
+                
+                // 如果是连接被拒绝错误，提供更具体的错误信息
+                if (e instanceof java.net.ConnectException) {
+                    String detailMsg = "[TCP Client] 连接被拒绝，可能的原因: 1.目标主机未运行对应服务 2.主机地址或端口配置错误 3.网络防火墙阻止连接";
+                    logger.error(detailMsg);
+                    notifyLogReceived(detailMsg);
+                }
             }
         });
     }
@@ -322,10 +346,11 @@ public class NetworkService {
      */
     private void handleTcpConnection(Socket socket, ServiceInstance serviceInstance) {
         NetworkConfig config = serviceInstance.getConfig();
-        // 增加连接数计数
+        // 增加连接数计数并添加到客户端集合
         synchronized(this) {
             int count = serviceInstance.getConnectedClientCount() + 1;
             serviceInstance.setConnectedClientCount(count);
+            serviceInstance.addConnectedClient(socket); // 添加到客户端集合
             String logMsg = "[TCP Connection] " + config.getServiceType().getDescription() + " 当前连接数: " + count;
             logger.info(logMsg);
             notifyLogReceived(logMsg);
@@ -340,17 +365,30 @@ public class NetworkService {
                 String receivedData = processReceivedData(buffer, bytesRead, config);
                 notifyDataReceived(receivedData, config.getServiceType());
                 String aliasInfo = config.getAlias() != null && !config.getAlias().isEmpty() ? "[别名: " + config.getAlias() + "] " : "";
-                logger.info("Received TCP data: " + aliasInfo + receivedData);
+                
+                // 根据数据模式记录相应格式的日志
+                if (config.getDataMode() == DataMode.HEX) {
+                    // HEX模式：记录带空格的十六进制字符串，并添加原始无空格版本便于调试
+                    String rawHexData = bytesToHex(buffer, bytesRead);
+                    logger.info("Received TCP data (HEX): " + aliasInfo + receivedData);
+                    logger.debug("Received TCP raw HEX (no spaces): " + aliasInfo + rawHexData);
+                } else {
+                    // ASCII模式：记录ASCII字符串，并同时记录十六进制形式以便调试
+                    String hexData = bytesToHex(buffer, bytesRead);
+                    logger.info("Received TCP data (ASCII): " + aliasInfo + receivedData);
+                    logger.debug("Received TCP data (HEX): " + aliasInfo + hexData);
+                }
             }
         } catch (IOException e) {
             if (serviceInstance.isRunning()) { // 只有在服务运行时才记录错误
                 logger.warn("Error handling TCP connection: " + e.getMessage());
             }
         } finally {
-            // 连接关闭时减少计数
+            // 连接关闭时减少计数并从集合中移除
             synchronized(this) {
                 int count = Math.max(0, serviceInstance.getConnectedClientCount() - 1);
                 serviceInstance.setConnectedClientCount(count);
+                serviceInstance.removeConnectedClient(socket); // 从客户端集合中移除
                 String logMsg = "[TCP Connection] 客户端断开连接，" + config.getServiceType().getDescription() + " 当前连接数: " + count;
                 logger.info(logMsg);
                 notifyLogReceived(logMsg);
@@ -371,10 +409,24 @@ public class NetworkService {
      */
     private String processReceivedData(byte[] data, int length, NetworkConfig config) {
         if (config.getDataMode() == DataMode.HEX) {
-            return bytesToHex(data, length);
+            // 返回格式化的十六进制字符串，添加空格分隔以便于阅读
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < length; i++) {
+                if (i > 0) {
+                    sb.append(" ");
+                }
+                sb.append(String.format("%02X", data[i]));
+            }
+            return sb.toString();
         } else {
-            // ASCII模式
-            return new String(data, 0, length);
+            // ASCII模式：使用UTF-8编码，增加异常处理
+            try {
+                return new String(data, 0, length, "UTF-8");
+            } catch (Exception e) {
+                // 如果UTF-8解码失败，使用默认编码并记录警告
+                logger.warn("UTF-8解码失败，使用默认编码: " + e.getMessage());
+                return new String(data, 0, length);
+            }
         }
     }
     
@@ -411,8 +463,18 @@ public class NetworkService {
             switch (config.getProtocolType()) {
                 case TCP_SERVER:
                     // TCP服务端需要知道目标客户端
-                    logger.warn("TCP server cannot send data directly, need client information");
-                    break;
+            logger.warn("TCP server cannot send data directly, need client information");
+            // 可以在这里添加获取第一个连接的客户端并发送数据的逻辑
+            if (!instance.getConnectedClients().isEmpty()) {
+                Socket clientSocket = instance.getConnectedClients().iterator().next();
+                try {
+                    clientSocket.getOutputStream().write(bytes);
+                    logger.info("Sent TCP data to first connected client of " + serviceType.getDescription() + ": " + data);
+                } catch (IOException e) {
+                    logger.warn("Failed to send data to TCP client: " + e.getMessage());
+                }
+            }
+            break;
                 case TCP_CLIENT:
                     if (instance.getTcpClientSocket() != null && instance.getTcpClientSocket().isConnected()) {
                         instance.getTcpClientSocket().getOutputStream().write(bytes);
@@ -439,14 +501,47 @@ public class NetworkService {
      * 将十六进制字符串转换为字节数组
      */
     private byte[] hexToBytes(String hex) {
-        hex = hex.replaceAll("\\s+", ""); // 移除所有空格
+        // 检查输入是否为空
+        if (hex == null || hex.trim().isEmpty()) {
+            logger.warn("尝试转换空的十六进制字符串");
+            return new byte[0];
+        }
+        
+        // 移除所有空格和分隔符
+        hex = hex.replaceAll("\\s+", "");
+        
+        // 检查长度是否为偶数
+        if (hex.length() % 2 != 0) {
+            logger.warn("十六进制字符串长度不是偶数，自动补0: " + hex);
+            hex = "0" + hex; // 在前面补0
+        }
+        
         int len = hex.length();
         byte[] data = new byte[len / 2];
-        for (int i = 0; i < len; i += 2) {
-            data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
-                                 + Character.digit(hex.charAt(i + 1), 16));
+        
+        // 添加错误处理
+        try {
+            for (int i = 0; i < len; i += 2) {
+                // 检查字符是否为有效十六进制字符
+                if (!isHexChar(hex.charAt(i)) || !isHexChar(hex.charAt(i + 1))) {
+                    throw new IllegalArgumentException("无效的十六进制字符: " + hex.substring(i, i + 2));
+                }
+                
+                data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
+                                     + Character.digit(hex.charAt(i + 1), 16));
+            }
+            return data;
+        } catch (Exception e) {
+            logger.error("十六进制字符串转换失败: " + hex, e);
+            throw new IllegalArgumentException("无效的十六进制字符串: " + hex, e);
         }
-        return data;
+    }
+    
+    /**
+     * 检查字符是否为有效的十六进制字符
+     */
+    private boolean isHexChar(char c) {
+        return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
     }
     
     /**
@@ -560,5 +655,132 @@ public class NetworkService {
         executorService.shutdown();
     }
     
+    /**
+     * 发送数据并等待响应
+     * @param data 要发送的数据
+     * @param serviceType 服务类型
+     * @param timeoutMs 等待超时时间（毫秒）
+     * @return 接收到的响应数据，如果超时或出错则返回null
+     */
+    public String sendDataAndWaitForResponse(String data, ServiceType serviceType, int timeoutMs) {
+        ServiceInstance instance = serviceInstances.get(serviceType);
+        if (instance == null || !instance.isRunning()) {
+            logger.warn("Cannot send data to " + serviceType.getDescription() + ": network service not running");
+            return null;
+        }
+        
+        NetworkConfig config = instance.getConfig();
+        try {
+            byte[] bytes;
+            if (config.getDataMode() == DataMode.HEX) {
+                bytes = hexToBytes(data);
+            } else {
+                bytes = data.getBytes();
+            }
+            
+            switch (config.getProtocolType()) {
+                case TCP_SERVER:
+                    logger.warn("TCP server cannot send data and wait for response directly, need client information");
+                    return null;
+                case TCP_CLIENT:
+                    return sendTcpClientDataAndWaitResponse(instance, bytes, timeoutMs, config);
+                case UDP:
+                    return sendUdpDataAndWaitResponse(instance, bytes, timeoutMs, config);
+                default:
+                    logger.warn("Unsupported protocol type: " + config.getProtocolType());
+                    return null;
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to send data and wait for response to " + serviceType.getDescription() + ": " + e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * TCP客户端发送数据并等待响应
+     */
+    private String sendTcpClientDataAndWaitResponse(ServiceInstance instance, byte[] data, int timeoutMs, NetworkConfig config) {
+        try {
+            Socket socket = instance.getTcpClientSocket();
+            if (socket == null || !socket.isConnected()) {
+                logger.warn("TCP client for " + config.getServiceType().getDescription() + " not connected");
+                return null;
+            }
+            
+            // 设置读取超时
+            socket.setSoTimeout(timeoutMs);
+            
+            // 发送数据
+            socket.getOutputStream().write(data);
+            socket.getOutputStream().flush();
+            // 确保日志中使用正确的数据模式格式
+            String logData = config.getDataMode() == DataMode.HEX ? bytesToHex(data, data.length) : 
+                (data.length > 100 ? "[太长，截断显示] " + new String(data, 0, 100, "UTF-8") + "..." : new String(data, "UTF-8"));
+            logger.info("Sent TCP data to " + config.getServiceType().getDescription() + ": " + logData);
+            
+            // 等待并读取响应
+            byte[] buffer = new byte[1024];
+            int bytesRead = socket.getInputStream().read(buffer);
+            if (bytesRead > 0) {
+                String response = processReceivedData(buffer, bytesRead, config);
+                logger.info("Received TCP response from " + config.getServiceType().getDescription() + ": " + response);
+                return response;
+            }
+        } catch (SocketTimeoutException e) {
+            logger.warn("TCP response timeout for " + config.getServiceType().getDescription());
+        } catch (Exception e) {
+            logger.warn("Error in TCP client communication: " + e.getMessage());
+        }
+        return null;
+    }
+    
+    /**
+     * UDP发送数据并等待响应
+     */
+    private String sendUdpDataAndWaitResponse(ServiceInstance instance, byte[] data, int timeoutMs, NetworkConfig config) {
+        try {
+            DatagramSocket udpSocket = instance.getUdpSocket();
+            if (udpSocket == null || udpSocket.isClosed()) {
+                logger.warn("UDP socket for " + config.getServiceType().getDescription() + " not available");
+                return null;
+            }
+            
+            // 设置接收超时
+            udpSocket.setSoTimeout(timeoutMs);
+            
+            // 发送数据
+            InetAddress address = InetAddress.getByName(config.getHost());
+            DatagramPacket sendPacket = new DatagramPacket(data, data.length, address, config.getPort());
+            udpSocket.send(sendPacket);
+            // 确保日志中使用正确的数据模式格式
+            String logData = config.getDataMode() == DataMode.HEX ? bytesToHex(data, data.length) : 
+                (data.length > 100 ? "[太长，截断显示] " + new String(data, 0, 100, "UTF-8") + "..." : new String(data, "UTF-8"));
+            logger.info("Sent UDP data to " + config.getServiceType().getDescription() + " at " + config.getHost() + ":" + config.getPort() + ": " + logData);
+            
+            // 等待并读取响应
+            byte[] buffer = new byte[1024];
+            DatagramPacket receivePacket = new DatagramPacket(buffer, buffer.length);
+            udpSocket.receive(receivePacket);
+            
+            String response = processReceivedData(buffer, receivePacket.getLength(), config);
+            logger.info("Received UDP response from " + receivePacket.getAddress().getHostAddress() + ":" + receivePacket.getPort() + ": " + response);
+            return response;
+        } catch (SocketTimeoutException e) {
+            logger.warn("UDP response timeout for " + config.getServiceType().getDescription());
+        } catch (Exception e) {
+            logger.warn("Error in UDP communication: " + e.getMessage());
+        }
+        return null;
+    }
+    
+    /**
+     * 发送数据并等待响应（使用默认超时时间5000毫秒）
+     * @param data 要发送的数据
+     * @param serviceType 服务类型
+     * @return 接收到的响应数据，如果超时或出错则返回null
+     */
+    public String sendDataAndWaitForResponse(String data, ServiceType serviceType) {
+        return sendDataAndWaitForResponse(data, serviceType, 5000);
+    }
 
 }

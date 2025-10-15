@@ -2,6 +2,8 @@ package com.iot.plc.service;
 
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.HashSet;
+import java.util.Set;
 
 import com.iot.plc.config.NetworkConfig;
 
@@ -19,6 +21,7 @@ public class ServiceInstance {
     private ServerSocket tcpServerSocket;
     private Socket tcpClientSocket;
     private DatagramSocket udpSocket;
+    private Set<Socket> connectedClients; // 存储连接的客户端Socket
     
     /**
      * 构造函数
@@ -28,6 +31,32 @@ public class ServiceInstance {
         this.config = config;
         this.running = false;
         this.connectedClientCount = 0;
+        this.connectedClients = new HashSet<>();
+        this.thread = null;
+        this.tcpServerSocket = null;
+        this.tcpClientSocket = null;
+        this.udpSocket = null;
+    }
+    
+    /**
+     * 获取已连接的客户端集合
+     */
+    public Set<Socket> getConnectedClients() {
+        return connectedClients;
+    }
+    
+    /**
+     * 添加客户端连接
+     */
+    public void addConnectedClient(Socket socket) {
+        connectedClients.add(socket);
+    }
+    
+    /**
+     * 移除客户端连接
+     */
+    public void removeConnectedClient(Socket socket) {
+        connectedClients.remove(socket);
     }
     
     /**

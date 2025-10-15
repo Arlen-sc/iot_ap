@@ -23,7 +23,7 @@ public class DatabaseManager {
             }
     }
     
-    private static void initializeDatabase() {
+    public static void initializeDatabase() {
         try (Connection conn = DriverManager.getConnection(DB_URL);
              Statement stmt = conn.createStatement()) {
             

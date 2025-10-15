@@ -155,8 +155,11 @@ public class AutoProcessService {
                         barcodeVerified.set(true);
                         currentStatus = "验证通过";
                         log("条码数量验证通过: " + actualCount + " = " + count);
-                        // 发送确认指令给PLC
-                        plcService.sendToPlc(deviceId, "127.0.0.1", 502, "{\"type\":\"barcode_verified\",\"status\":\"ok\"}");
+                        // 发送确认指令给PLC - 从配置服务获取，默认值为"ok"
+                        ConfigService configService = ConfigService.getInstance();
+                        String okStatus = configService.getConfigValueByKeyOrDefault("plc.barcode.verified.status.ok", "ok");
+                        String okCommand = String.format("{\"type\":\"barcode_verified\",\"status\":\"%s\"}", okStatus);
+                        plcService.sendToPlc(deviceId, "127.0.0.1", 502, okCommand);
                         waitingForStartCommand.set(true);
                     } else {
                         log("错误: 条码数量不匹配! 实际: " + actualCount + " 预期: " + count);
