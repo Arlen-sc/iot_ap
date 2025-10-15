@@ -29,8 +29,7 @@ import java.util.StringJoiner;
 
 import com.iot.plc.logger.Logger;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
+import com.alibaba.fastjson.JSONObject;
 
 /**
  * 上位机通信服务类
@@ -38,7 +37,6 @@ import com.google.gson.GsonBuilder;
  */
 public class UpperComputerService {
     private static final Logger logger = Logger.getInstance();
-    private static final Gson gson = new GsonBuilder().setDateFormat("yyyy-MM-dd HH:mm:ss").create();
     
     // 单例模式
     private static UpperComputerService instance;
@@ -238,7 +236,7 @@ public class UpperComputerService {
             command.setCommand("PROGRAM");
             
             // 转换为JSON
-            String json = gson.toJson(command);
+            String json = JSONObject.toJSONString(command);
             
             // 发送指令
             ChannelFuture future = channel.writeAndFlush(json);
@@ -288,7 +286,7 @@ public class UpperComputerService {
      * @param result 烧录结果
      */
     private void processProgramResult(ProgramResult result) {
-        logger.info("Processing program result: " + gson.toJson(result));
+        logger.info("Processing program result: " + JSONObject.toJSONString(result));
         
         try {
             // 保存烧录结果到数据库
@@ -359,8 +357,8 @@ public class UpperComputerService {
             
             try {
                 // 解析烧录结果
-                ProgramResult result = gson.fromJson(msg, ProgramResult.class);
-                
+                // ProgramResult result = gson.fromJson(msg, ProgramResult.class);
+                ProgramResult result = JSONObject.parseObject(msg, ProgramResult.class);
                 // 添加到结果队列
                 resultQueue.offer(result);
                 

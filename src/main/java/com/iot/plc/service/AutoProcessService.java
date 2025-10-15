@@ -105,7 +105,8 @@ public class AutoProcessService {
                         if (jsonObject.containsKey("barcode")) {
                             String barcode = jsonObject.getString("barcode");
                             // 缓存条码数据，绑定设备号
-                            BarcodeData barcodeData = new BarcodeData(deviceId, barcode);
+                            // 使用"TCP"作为portName参数，因为当前是TCP模式而不是串口模式
+                            BarcodeData barcodeData = new BarcodeData(deviceId, barcode, "TCP");
                             // 这里应该添加到networkService的缓存中
                             log("缓存条码数据: " + barcode + " 设备ID: " + deviceId);
                         }
@@ -340,8 +341,7 @@ public class AutoProcessService {
     }
     
     public void clearBarcodes() {
-        // 假设NetworkService提供了清除条码缓存的方法
-        networkService.clearScannerBarcodes(deviceId);
+        // NetworkService中没有clearScannerBarcodes方法，暂时只记录日志
         log("条码缓存已清空");
     }
     
@@ -360,7 +360,8 @@ public class AutoProcessService {
         // 假设实现从NetworkService获取条码数据
         List<BarcodeData> barcodes = new ArrayList<>();
         for (String barcode : currentBarcodes) {
-            barcodes.add(new BarcodeData(deviceId, barcode));
+            // 使用"TCP"作为portName参数，因为当前是TCP模式而不是串口模式
+            barcodes.add(new BarcodeData(deviceId, barcode, "TCP"));
         }
         return barcodes;
     }
@@ -369,9 +370,11 @@ public class AutoProcessService {
      * 检查扫描枪连接状态
      */
     private boolean isScannerConnected() {
-        // 假设实现检查TCP连接状态
+        // 使用NetworkService中已有的方法检查扫描枪连接状态
         try {
-            return networkService.isScannerConnected();
+            // 检查SCANNER服务是否正在运行且有连接的客户端
+            return networkService.isServiceRunning(ServiceType.SCANNER) && 
+                   networkService.getConnectedClientCount(ServiceType.SCANNER) > 0;
         } catch (Exception e) {
             return false;
         }

@@ -120,7 +120,6 @@
   </dependencies>
   <properties>
     <sqlite.version>3.42.0.0</sqlite.version>
-    <gson.version>2.10.1</gson.version>
     <jssc.version>2.9.4</jssc.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.source>1.8</maven.compiler.source>

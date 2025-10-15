@@ -3,10 +3,7 @@ package com.iot.plc.service;
 import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.model.*;
 import com.iot.plc.logger.Logger;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import com.alibaba.fastjson.JSONObject;
 
 import java.io.IOException;
 import java.net.Socket;
@@ -23,7 +20,6 @@ import java.util.function.BiConsumer;
  */
 public class PlcService {
     private static final Logger logger = Logger.getInstance();
-    private static final Gson gson = new GsonBuilder().setDateFormat("yyyy-MM-dd HH:mm:ss").create();
     private static final int RECONNECT_DELAY = 5000; // 重连延迟时间(毫秒)
     
     // 单例模式
@@ -311,17 +307,17 @@ public class PlcService {
             logger.info("收到PLC消息: " + message);
             
             // 解析消息
-            JsonObject jsonObject = JsonParser.parseString(message).getAsJsonObject();
-            String type = jsonObject.has("type") ? jsonObject.get("type").getAsString() : "unknown";
+            JSONObject jsonObject = JSONObject.parseObject(message);
+            String type = jsonObject.containsKey("type") ? jsonObject.getString("type") : "unknown";
             
             // 通知所有监听器
             notifyPlcMessageListeners(type, message);
             
-            if ("product_count".equals(type) && jsonObject.has("data")) {
+            if ("product_count".equals(type) && jsonObject.containsKey("data")) {
                 // 处理产品数量数据
-                JsonObject dataObject = jsonObject.get("data").getAsJsonObject();
-                int count = dataObject.has("count") ? dataObject.get("count").getAsInt() : 0;
-                String batchId = dataObject.has("batch_id") ? dataObject.get("batch_id").getAsString() : "";
+                JSONObject dataObject = jsonObject.getJSONObject("data");
+                int count = dataObject.containsKey("count") ? dataObject.getIntValue("count") : 0;
+                String batchId = dataObject.containsKey("batch_id") ? dataObject.getString("batch_id") : "";
                 
                 ProductCountData productCountData = new ProductCountData(count, batchId);
                 productCountQueue.offer(productCountData);
@@ -379,18 +375,18 @@ public class PlcService {
         }
         
         try {
-            JsonObject responseObject = new JsonObject();
-            responseObject.addProperty("type", "validation_result");
+            JSONObject responseObject = new JSONObject();
+            responseObject.put("type", "validation_result");
             
-            JsonObject dataObject = new JsonObject();
-            dataObject.addProperty("is_valid", result.isValid());
-            dataObject.addProperty("message", result.getMessage());
-            dataObject.addProperty("expected", result.getExpectedCount());
-            dataObject.addProperty("actual", result.getActualCount());
+            JSONObject dataObject = new JSONObject();
+            dataObject.put("is_valid", result.isValid());
+            dataObject.put("message", result.getMessage());
+            dataObject.put("expected", result.getExpectedCount());
+            dataObject.put("actual", result.getActualCount());
             
-            responseObject.add("data", dataObject);
+            responseObject.put("data", dataObject);
             
-            String jsonResponse = gson.toJson(responseObject);
+            String jsonResponse = responseObject.toJSONString();
             
             // 发送验证结果
             plcSocket.getOutputStream().write(jsonResponse.getBytes());
@@ -571,38 +567,38 @@ public class PlcService {
     public String parseData(String rawData) {
         try {
             // 解析PLC数据
-            JsonObject parsedData = new JsonObject();
-            parsedData.addProperty("rawData", rawData);
+            JSONObject parsedData = new JSONObject();
+            parsedData.put("rawData", rawData);
             
             // 尝试解析为JSON
             try {
-                JsonObject jsonObject = JsonParser.parseString(rawData).getAsJsonObject();
-                String type = jsonObject.has("type") ? jsonObject.get("type").getAsString() : "";
+                JSONObject jsonObject = JSONObject.parseObject(rawData);
+                String type = jsonObject.containsKey("type") ? jsonObject.getString("type") : "";
                 
-                if ("product_count".equals(type) && jsonObject.has("data")) {
-                    JsonObject dataObject = jsonObject.get("data").getAsJsonObject();
-                    int count = dataObject.has("count") ? dataObject.get("count").getAsInt() : 0;
-                    String timestamp = dataObject.has("timestamp") ? dataObject.get("timestamp").getAsString() : "";
+                if ("product_count".equals(type) && jsonObject.containsKey("data")) {
+                    JSONObject dataObject = jsonObject.getJSONObject("data");
+                    int count = dataObject.containsKey("count") ? dataObject.getIntValue("count") : 0;
+                    String timestamp = dataObject.containsKey("timestamp") ? dataObject.getString("timestamp") : "";
                     
-                    parsedData.addProperty("type", "product_count");
-                    parsedData.addProperty("count", count);
-                    parsedData.addProperty("timestamp", timestamp);
-                    parsedData.addProperty("status", "parsed");
+                    parsedData.put("type", "product_count");
+                    parsedData.put("count", count);
+                    parsedData.put("timestamp", timestamp);
+                    parsedData.put("status", "parsed");
                 } else if ("start_command".equals(type)) {
-                    parsedData.addProperty("type", "start_command");
-                    parsedData.addProperty("status", "parsed");
+                    parsedData.put("type", "start_command");
+                    parsedData.put("status", "parsed");
                 } else {
-                    parsedData.addProperty("type", "unknown");
-                    parsedData.addProperty("status", "parsed");
+                    parsedData.put("type", "unknown");
+                    parsedData.put("status", "parsed");
                 }
             } catch (Exception e) {
                 // 非JSON格式，尝试其他解析方式
-                parsedData.addProperty("parsedValue", parseRawData(rawData));
-                parsedData.addProperty("status", "parsed");
+                parsedData.put("parsedValue", parseRawData(rawData));
+                parsedData.put("status", "parsed");
             }
             
-            parsedData.addProperty("timestamp", System.currentTimeMillis());
-            return gson.toJson(parsedData);
+            parsedData.put("timestamp", System.currentTimeMillis());
+            return parsedData.toJSONString();
         } catch (Exception e) {
             logger.error("解析数据失败: " + e.getMessage(), e);
             return "解析失败: " + e.getMessage();

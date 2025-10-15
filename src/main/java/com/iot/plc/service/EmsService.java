@@ -12,8 +12,7 @@ import java.util.concurrent.Executors;
 
 import com.iot.plc.logger.Logger;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
+import com.alibaba.fastjson.JSONObject;
 
 /**
  * EMS服务类
@@ -21,7 +20,6 @@ import com.google.gson.GsonBuilder;
  */
 public class EmsService {
     private static final Logger logger = Logger.getInstance();
-    private static final Gson gson = new GsonBuilder().setDateFormat("yyyy-MM-dd HH:mm:ss").create();
     
     // 单例模式
     private static EmsService instance;
@@ -75,7 +73,7 @@ public class EmsService {
         executorService.submit(() -> {
             try {
                 // 转换为JSON
-                String json = gson.toJson(result);
+                String json = JSONObject.toJSONString(result);
                 
                 // 发送HTTP请求
                 URL url = new URL(emsApiUrl);

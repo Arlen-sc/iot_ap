@@ -2,8 +2,7 @@ package com.iot.plc.service;
 
 import com.iot.plc.model.BarcodeData;
 import com.iot.plc.model.ProgramResult;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import com.alibaba.fastjson.JSONObject;
 import com.iot.plc.logger.Logger;
 
 import java.util.ArrayList;
@@ -119,9 +118,9 @@ public class AutoControlService {
         }
         
         try {
-            JsonObject json = JsonParser.parseString(plcMessage).getAsJsonObject();
-            if ("product_count".equals(json.get("type").getAsString())) {
-                expectedProductCount = json.getAsJsonObject("data").get("count").getAsInt();
+            JSONObject json = JSONObject.parseObject(plcMessage);
+            if ("product_count".equals(json.getString("type"))) {
+                expectedProductCount = json.getJSONObject("data").getIntValue("count");
                 int actualCount = barcodeMap.getOrDefault(currentDeviceId, new ArrayList<>()).size();
                 
                 if (expectedProductCount == actualCount) {

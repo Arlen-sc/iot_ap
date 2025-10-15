@@ -424,6 +424,9 @@ public class AutoProcessPanel extends BorderPane {
                         String deviceId = "SCANNER_NETWORK";
                         String portName = "NETWORK_PORT";
                         DatabaseManager.saveBarcodeData(deviceId, data.trim(), portName);
+                        
+                        // 调用封装的条码处理方法
+                        processBarcodeData(data.trim(), "TCP", "扫码机扫描");
                     } catch (SQLException e) {
                         logger.error("保存扫码机条码数据失败: " + e.getMessage());
                     }
@@ -956,7 +959,8 @@ public class AutoProcessPanel extends BorderPane {
 
         TableColumn<BarcodeData, String> scanTimeColumn = new TableColumn<>("扫描时间");
         scanTimeColumn.setCellValueFactory(cellData -> new SimpleStringProperty(
-                cellData.getValue().getScanTime().format(formatter)));
+                cellData.getValue().getScanTime() != null ? 
+                cellData.getValue().getScanTime().format(formatter) : ""));
         scanTimeColumn.setPrefWidth(150);
 
         TableColumn<BarcodeData, String> portNameColumn = new TableColumn<>("串口名称");
@@ -1545,28 +1549,47 @@ public class AutoProcessPanel extends BorderPane {
         log("[数据状态] 当前条码数量: " + barcodeDataList.size() + ", 预期条码数量: " + expectedBarcodeCount.get());
     }
 
-    private void handleManualBarcodeInput() {
-        log("[操作] 用户点击了'确认输入'按钮");
+    /**
+     * 处理条码数据的封装方法
+     * @param barcode 条码内容
+     * @param portName 端口名称
+     * @param source 条码来源标识（用于日志记录）
+     */
+    private void processBarcodeData(String barcode, String portName, String source) {
         if (!processStarted.get()) {
             log("[操作结果] 请先启动流程");
             return;
         }
 
-        String barcode = barcodeInputField.getText().trim();
-        if (barcode.isEmpty()) {
-            log("[操作结果] 请输入有效的条码");
+        if (barcode == null || barcode.isEmpty()) {
+            log("[操作结果] 无效的条码数据");
+            return;
+        }
+
+        // 防重逻辑：检查当前条码是否已存在
+        if (currentBarcodes.contains(barcode)) {
+            log("[操作结果] 条码已存在，跳过处理: " + barcode);
             return;
         }
 
         // 创建条码数据对象
-        BarcodeData barcodeData = new BarcodeData(deviceId, barcode, comPortComboBox.getValue());
+        BarcodeData barcodeData = new BarcodeData(deviceId, barcode, portName);
 
         // 添加到缓存
         barcodeDataList.add(barcodeData);
         currentBarcodes.add(barcode);
 
-        log("[操作结果] 手动输入条码: " + barcode);
+        log("[操作结果] " + source + "条码: " + barcode);
         log("[数据状态] 当前条码数量: " + barcodeDataList.size() + ", 预期条码数量: " + expectedBarcodeCount.get());
+    }
+    
+    private void handleManualBarcodeInput() {
+        log("[操作] 用户点击了'确认输入'按钮");
+        
+        String barcode = barcodeInputField.getText().trim();
+        processBarcodeData(barcode, "TCP", "手动输入");
+        
+        // 清除输入框
         barcodeInputField.clear();
     }
 

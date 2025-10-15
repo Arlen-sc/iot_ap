@@ -51,6 +51,27 @@ public class ConfigService {
             throw new RuntimeException("加载配置项失败", e);
         }
     }
+    
+    /**
+     * 根据配置键获取配置值
+     * @param configKey 配置键
+     * @return 配置值，如果未找到则返回null
+     */
+    public String getConfigValueByKey(String configKey) {
+        try {
+            List<ConfigItem> configItems = DatabaseManager.getAllConfigItems();
+            for (ConfigItem item : configItems) {
+                if (item.getConfigKey().equals(configKey)) {
+                    return item.getConfigValue();
+                }
+            }
+            logger.warn("未找到配置项，配置键: " + configKey);
+            return null;
+        } catch (SQLException e) {
+            logger.error("获取配置项失败，配置键: " + configKey + ", 错误: " + e.getMessage(), e);
+            return null;
+        }
+    }
 
     /**
      * 根据ID获取配置项
@@ -121,28 +142,6 @@ public class ConfigService {
         } catch (SQLException e) {
             logger.error("配置项删除失败，配置ID: " + configId + ", 错误: " + e.getMessage(), e);
             throw new RuntimeException("配置项删除失败", e);
-        }
-    }
-
-    /**
-     * 根据配置键获取配置值
-     * @param configKey 配置键
-     * @return 配置值
-     */
-    public String getConfigValueByKey(String configKey) {
-        try {
-            List<ConfigItem> configItems = DatabaseManager.getAllConfigItems();
-            for (ConfigItem item : configItems) {
-                if (item.getConfigKey().equals(configKey)) {
-                    logger.info("获取配置值成功，配置键: " + configKey);
-                    return item.getConfigValue();
-                }
-            }
-            logger.warn("未找到配置项，配置键: " + configKey);
-            return null;
-        } catch (SQLException e) {
-            logger.error("获取配置值失败，配置键: " + configKey + ", 错误: " + e.getMessage(), e);
-            throw new RuntimeException("获取配置值失败", e);
         }
     }
 
