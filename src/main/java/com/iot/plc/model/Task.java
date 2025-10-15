@@ -43,11 +43,18 @@ public class Task {
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     
+    // 转换为TaskItem方法
+    public TaskItem toTaskItem() {
+        return new TaskItem(id, taskName, cronExpression, deviceId, enabled ? 1 : 0, 
+                           description, null, null);
+    }
+    
     @Override
     public String toString() {
         return "Task{" +
                 "id=" + id +
                 ", deviceId='" + deviceId + '\'' +
+                ", taskName='" + taskName + '\'' +
                 ", cronExpression='" + cronExpression + '\'' +
                 ", description='" + description + '\'' +
                 ", taskType='" + taskType + '\'' +

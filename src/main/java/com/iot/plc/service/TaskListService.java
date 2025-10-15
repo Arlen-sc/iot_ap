@@ -2,11 +2,13 @@ package com.iot.plc.service;
 
 import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.model.Task;
+import com.iot.plc.model.TaskItem;
 import com.iot.plc.model.TaskDetail;
 import com.iot.plc.scheduler.TaskScheduler;
 import com.iot.plc.logger.Logger;
 
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -45,7 +47,21 @@ public class TaskListService {
      */
     public List<Task> loadTasks() {
         try {
-            List<Task> tasks = DatabaseManager.getAllTasks();
+            List<TaskItem> taskItems = DatabaseManager.getAllTasks();
+            // 将TaskItem转换为Task对象
+            List<Task> tasks = new ArrayList<>();
+            for (TaskItem item : taskItems) {
+                Task task = new Task();
+                task.setId(item.getId());
+                task.setTaskName(item.getTaskName());
+                task.setCronExpression(item.getCronExpression());
+                task.setDeviceId(item.getDeviceId());
+                // 设置默认值
+                task.setEnabled(true);
+                task.setDescription("" + item.getRemark());
+                task.setTaskType("default");
+                tasks.add(task);
+            }
             logger.info("加载任务成功，共加载 " + tasks.size() + " 个任务");
             return tasks;
         } catch (SQLException e) {
@@ -76,9 +92,16 @@ public class TaskListService {
     public void startAllTasks() {
         try {
             // 1. 更新所有任务的enabled状态为true
-            List<Task> tasks = DatabaseManager.getAllTasks();
-            for (Task task : tasks) {
+            List<TaskItem> taskItems = DatabaseManager.getAllTasks();
+            for (TaskItem item : taskItems) {
+                Task task = new Task();
+                task.setId(item.getId());
+                task.setTaskName(item.getTaskName());
+                task.setCronExpression(item.getCronExpression());
+                task.setDeviceId(item.getDeviceId());
                 task.setEnabled(true);
+                task.setDescription("" + item.getRemark());
+                task.setTaskType("default");
                 DatabaseManager.saveTask(task);
             }
 
@@ -99,9 +122,16 @@ public class TaskListService {
     public void stopAllTasks() {
         try {
             // 1. 更新所有任务的enabled状态为false
-            List<Task> tasks = DatabaseManager.getAllTasks();
-            for (Task task : tasks) {
+            List<TaskItem> taskItems = DatabaseManager.getAllTasks();
+            for (TaskItem item : taskItems) {
+                Task task = new Task();
+                task.setId(item.getId());
+                task.setTaskName(item.getTaskName());
+                task.setCronExpression(item.getCronExpression());
+                task.setDeviceId(item.getDeviceId());
                 task.setEnabled(false);
+                task.setDescription("" + item.getRemark());
+                task.setTaskType("default");
                 DatabaseManager.saveTask(task);
             }
 
@@ -180,13 +210,23 @@ public class TaskListService {
      */
     public Task getTaskById(int taskId) {
         try {
-            Task task = DatabaseManager.getTaskById(taskId);
-            if (task != null) {
+            TaskItem item = DatabaseManager.getTaskById(taskId);
+            if (item != null) {
+                // 将TaskItem转换为Task对象
+                Task task = new Task();
+                task.setId(item.getId());
+                task.setTaskName(item.getTaskName());
+                task.setCronExpression(item.getCronExpression());
+                task.setDeviceId(item.getDeviceId());
+                task.setEnabled(true);
+                task.setDescription("" + item.getRemark());
+                task.setTaskType("default");
                 logger.info("获取任务成功，任务ID: " + taskId);
+                return task;
             } else {
                 logger.warn("未找到任务，任务ID: " + taskId);
+                return null;
             }
-            return task;
         } catch (SQLException e) {
             logger.error("获取任务信息失败，任务ID: " + taskId + ", 错误: " + e.getMessage(), e);
             throw new RuntimeException("获取任务信息失败", e);

@@ -1,9 +1,12 @@
 package com.iot.plc.database;
 
 import com.iot.plc.model.*;
+import com.iot.plc.model.LogItem;
+import com.iot.plc.model.TaskItem;
 import com.iot.plc.logger.LogManager;
 import com.iot.plc.logger.Logger;
 import java.sql.*;
+import java.sql.Types;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -161,25 +164,24 @@ public class DatabaseManager {
         }
     }
     
-    public static List<Task> getAllTasks() throws SQLException {
-        List<Task> tasks = new ArrayList<>();
-        String sql = "SELECT * FROM tasks ORDER BY created_at DESC";
-        
+    public static List<TaskItem> getAllTasks() throws SQLException {
+        List<TaskItem> tasks = new ArrayList<>();
+        String sql = "SELECT id, task_name, cron_expression, device_id, status, remark, start_time, last_execute_time FROM tasks";
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
-            
             while (rs.next()) {
-                Task task = new Task();
-                task.setId(rs.getInt("id"));
-                task.setDeviceId(rs.getString("device_id"));
-                task.setCronExpression(rs.getString("cron_expression"));
-                task.setDescription(rs.getString("description"));
-                task.setTaskType(rs.getString("task_type"));
-                task.setTaskName(rs.getString("task_name"));
-                task.setEnabled(rs.getBoolean("enabled"));
-                
-                tasks.add(task);
+                TaskItem taskItem = new TaskItem(
+                    rs.getInt("id"),
+                    rs.getString("task_name"),
+                    rs.getString("cron_expression"),
+                    rs.getString("device_id"),
+                    rs.getInt("status"),
+                    rs.getString("remark"),
+                    rs.getTimestamp("start_time") != null ? rs.getTimestamp("start_time").toLocalDateTime() : null,
+                    rs.getTimestamp("last_execute_time") != null ? rs.getTimestamp("last_execute_time").toLocalDateTime() : null
+                );
+                tasks.add(taskItem);
             }
         }
         return tasks;
@@ -201,6 +203,194 @@ public class DatabaseManager {
         }
     }
     
+    /**
+     * 获取所有日志数据
+     */
+    public static List<LogItem> getAllLogs() throws SQLException {
+        List<LogItem> logs = new ArrayList<>();
+        String sql = "SELECT 'PLC数据' as log_type, id, created_at, data_json as content, '成功' as status FROM plc_data " +
+                      "UNION ALL " +
+                      "SELECT '条码数据' as log_type, id, created_at, barcode as content, '成功' as status FROM barcode_data " +
+                      "UNION ALL " +
+                      "SELECT '验证结果' as log_type, id, created_at, message as content, CASE WHEN is_valid THEN '成功' ELSE '失败' END as status FROM validation_result " +
+                      "UNION ALL " +
+                      "SELECT '烧录结果' as log_type, id, created_at, CONCAT('设备ID:', device_id, ', 条码:', barcode) as content, CASE WHEN result THEN '成功' ELSE '失败' END as status FROM program_result " +
+                      "ORDER BY created_at DESC LIMIT 1000";
+        
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            
+            while (rs.next()) {
+                LogItem logItem = new LogItem();
+                logItem.setLogType(rs.getString("log_type"));
+                logItem.setTimestamp(rs.getTimestamp("created_at").toLocalDateTime());
+                logItem.setDataContent(rs.getString("content"));
+                logItem.setStatus(rs.getString("status"));
+                logs.add(logItem);
+            }
+        }
+        return logs;
+    }
+    
+    /**
+     * 根据日志类型获取日志
+     */
+    public static List<LogItem> getLogsByType(String logType) throws SQLException {
+        List<LogItem> logs = new ArrayList<>();
+        String sql = "";
+        
+        if ("PLC数据".equals(logType)) {
+            sql = "SELECT id, created_at, data_json as content, '成功' as status FROM plc_data ORDER BY created_at DESC LIMIT 500";
+        } else if ("条码数据".equals(logType)) {
+            sql = "SELECT id, created_at, barcode as content, '成功' as status FROM barcode_data ORDER BY created_at DESC LIMIT 500";
+        } else if ("验证结果".equals(logType)) {
+            sql = "SELECT id, created_at, message as content, CASE WHEN is_valid THEN '成功' ELSE '失败' END as status FROM validation_result ORDER BY created_at DESC LIMIT 500";
+        }
+        
+        if (!sql.isEmpty()) {
+            try (Connection conn = getConnection();
+                 Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(sql)) {
+                
+                while (rs.next()) {
+                    LogItem logItem = new LogItem();
+                    logItem.setLogType(logType);
+                    logItem.setTimestamp(rs.getTimestamp("created_at").toLocalDateTime());
+                    logItem.setDataContent(rs.getString("content"));
+                    logItem.setStatus(rs.getString("status"));
+                    logs.add(logItem);
+                }
+            }
+        }
+        
+        return logs;
+    }
+    
+    /**
+     * 获取烧录结果日志
+     */
+    public static List<LogItem> getBurnResultLogs() throws SQLException {
+        List<LogItem> logs = new ArrayList<>();
+        String sql = "SELECT id, created_at, CONCAT('设备ID:', device_id, ', 条码:', barcode) as content, CASE WHEN result THEN '成功' ELSE '失败' END as status FROM program_result ORDER BY created_at DESC LIMIT 500";
+        
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            
+            while (rs.next()) {
+                LogItem logItem = new LogItem();
+                logItem.setLogType("烧录结果");
+                logItem.setTimestamp(rs.getTimestamp("created_at").toLocalDateTime());
+                logItem.setDataContent(rs.getString("content"));
+                logItem.setStatus(rs.getString("status"));
+                logs.add(logItem);
+            }
+        }
+        
+        return logs;
+    }
+    
+    /**
+     * 获取最近的条码数据
+     */
+    public static List<String> getRecentBarcodeData() throws SQLException {
+        List<String> barcodes = new ArrayList<>();
+        String sql = "SELECT barcode FROM barcode_data ORDER BY created_at DESC LIMIT 100";
+        
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            
+            while (rs.next()) {
+                barcodes.add(rs.getString("barcode"));
+            }
+        }
+        
+        return barcodes;
+    }
+    
+    /**
+     * 清空所有日志
+     */
+    public static void clearAllLogs() throws SQLException {
+        String[] tables = {"plc_data", "barcode_data", "validation_result", "program_result"};
+        
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            
+            try {
+                for (String table : tables) {
+                    String sql = "DELETE FROM " + table;
+                    try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                        pstmt.executeUpdate();
+                    }
+                }
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+        }
+    }
+    
+    /**
+     * 根据日志类型清空日志
+     */
+    public static void clearLogsByType(String logType) throws SQLException {
+        String tableName = "";
+        
+        if ("PLC数据".equals(logType)) {
+            tableName = "plc_data";
+        } else if ("条码数据".equals(logType)) {
+            tableName = "barcode_data";
+        } else if ("验证结果".equals(logType)) {
+            tableName = "validation_result";
+        } else if ("烧录结果".equals(logType)) {
+            tableName = "program_result";
+        }
+        
+        if (!tableName.isEmpty()) {
+            String sql = "DELETE FROM " + tableName;
+            try (Connection conn = getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.executeUpdate();
+            }
+        }
+    }
+    
+    /**
+     * 根据天数清理过期日志
+     */
+    public static int cleanupLogsByDays(int days) throws SQLException {
+        int totalDeleted = 0;
+        String cutoffDate = LocalDateTime.now().minusDays(days).toString();
+        String[] tables = {"plc_data", "barcode_data", "validation_result", "program_result"};
+        
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            
+            try {
+                for (String table : tables) {
+                    String sql = "DELETE FROM " + table + " WHERE created_at < ?";
+                    try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                        pstmt.setTimestamp(1, Timestamp.valueOf(cutoffDate));
+                        totalDeleted += pstmt.executeUpdate();
+                    }
+                }
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+        }
+        
+        return totalDeleted;
+    }
     // TaskDetail相关操作
     public static void saveTaskDetail(TaskDetail detail) throws SQLException {
         if (detail.getId() > 0) {
@@ -277,28 +467,27 @@ public class DatabaseManager {
         }
     }
     
-    public static Task getTaskById(int taskId) throws SQLException {
-        String sql = "SELECT * FROM tasks WHERE id = ?";
-        Task task = null;
-        
+    public static TaskItem getTaskById(int taskId) throws SQLException {
+        String sql = "SELECT id, task_name, cron_expression, device_id, status, remark, start_time, last_execute_time FROM tasks WHERE id = ?";
         try (Connection conn = getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
-            pstmt.setInt(1, taskId);
-            ResultSet rs = pstmt.executeQuery();
-            
-            if (rs.next()) {
-                task = new Task();
-                task.setId(rs.getInt("id"));
-                task.setDeviceId(rs.getString("device_id"));
-                task.setCronExpression(rs.getString("cron_expression"));
-                task.setDescription(rs.getString("description"));
-                task.setTaskType(rs.getString("task_type"));
-                task.setTaskName(rs.getString("task_name"));
-                task.setEnabled(rs.getBoolean("enabled"));
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setInt(1, taskId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return new TaskItem(
+                        rs.getInt("id"),
+                        rs.getString("task_name"),
+                        rs.getString("cron_expression"),
+                        rs.getString("device_id"),
+                        rs.getInt("status"),
+                        rs.getString("remark"),
+                        rs.getTimestamp("start_time") != null ? rs.getTimestamp("start_time").toLocalDateTime() : null,
+                        rs.getTimestamp("last_execute_time") != null ? rs.getTimestamp("last_execute_time").toLocalDateTime() : null
+                    );
+                }
             }
         }
-        return task;
+        return null;
     }
     
     // 修改saveBarcodeData方法，通过LogManager调用
@@ -524,6 +713,336 @@ public class DatabaseManager {
                 logger.error("删除配置项失败: ID=" + configId + " - " + e.getMessage(), e);
                 throw e;
             }
+    }
+    
+    /**
+     * 根据ID获取任务信息
+     * @param taskId 任务ID
+     * @return 任务信息对象
+     * @throws SQLException 数据库异常
+     */
+    public static TaskInfo getTaskInfoById(int taskId) throws SQLException {
+        String sql = "SELECT * FROM tasks WHERE id = ?";
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            pstmt.setInt(1, taskId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    TaskInfo taskInfo = new TaskInfo();
+                    taskInfo.setId(rs.getInt("id"));
+                    taskInfo.setDeviceId(rs.getString("device_id"));
+                    taskInfo.setCronExpression(rs.getString("cron_expression"));
+                    taskInfo.setDescription(rs.getString("description"));
+                    taskInfo.setTaskType(rs.getString("task_type"));
+                    taskInfo.setTaskName(rs.getString("task_name"));
+                    taskInfo.setEnabled(rs.getBoolean("enabled"));
+                    
+                    // 处理创建时间
+                    String createdAtStr = rs.getString("created_at");
+                    if (createdAtStr != null) {
+                        taskInfo.setCreatedAt(LocalDateTime.parse(createdAtStr));
+                    }
+                    
+                    logger.debug("获取任务信息成功: ID=" + taskId);
+                    return taskInfo;
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("获取任务信息失败: ID=" + taskId + " - " + e.getMessage(), e);
+            throw e;
+        }
+        
+        return null; // 未找到对应的任务
+    }
+    
+    /**
+     * 删除任务信息
+     * @param taskId 任务ID
+     * @throws SQLException 数据库异常
+     */
+    public static void deleteTaskInfo(int taskId) throws SQLException {
+        String sql = "DELETE FROM tasks WHERE id = ?";
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            pstmt.setInt(1, taskId);
+            int rowsAffected = pstmt.executeUpdate();
+            
+            if (rowsAffected > 0) {
+                logger.debug("删除任务成功: ID=" + taskId);
+            } else {
+                logger.warn("未找到要删除的任务: ID=" + taskId);
+            }
+        } catch (SQLException e) {
+            logger.error("删除任务失败: ID=" + taskId + " - " + e.getMessage(), e);
+            throw e;
+        }
+    }
+    
+    /**
+     * 更新任务状态
+     * @param taskId 任务ID
+     * @param status 新状态值
+     * @throws SQLException 数据库异常
+     */
+    public static void updateTaskInfoStatus(int taskId, int status) throws SQLException {
+        String sql = "UPDATE tasks SET status = ? WHERE id = ?";
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            pstmt.setInt(1, status);
+            pstmt.setInt(2, taskId);
+            
+            int rowsAffected = pstmt.executeUpdate();
+            if (rowsAffected > 0) {
+                logger.debug("更新任务状态成功: ID=" + taskId + ", Status=" + status);
+            } else {
+                logger.warn("未找到要更新状态的任务: ID=" + taskId);
+            }
+        } catch (SQLException e) {
+            logger.error("更新任务状态失败: ID=" + taskId + " - " + e.getMessage(), e);
+            throw e;
+        }
+    }
+    
+    /**
+     * 更新任务信息
+     * @param taskInfo 任务信息对象
+     * @throws SQLException 数据库异常
+     */
+    public static void updateTaskInfo(TaskInfo taskInfo) throws SQLException {
+        String sql = "UPDATE tasks SET device_id = ?, cron_expression = ?, description = ?, " +
+                    "task_type = ?, task_name = ?, enabled = ?, remark = ?, " +
+                    "start_time = ?, status = ?, last_execute_time = ? WHERE id = ?";
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            pstmt.setString(1, taskInfo.getDeviceId());
+            pstmt.setString(2, taskInfo.getCronExpression());
+            pstmt.setString(3, taskInfo.getDescription());
+            pstmt.setString(4, taskInfo.getTaskType());
+            pstmt.setString(5, taskInfo.getTaskName());
+            pstmt.setBoolean(6, taskInfo.isEnabled());
+            pstmt.setString(7, taskInfo.getRemark());
+            
+            // 处理LocalDateTime类型
+            if (taskInfo.getStartTime() != null) {
+                pstmt.setString(8, taskInfo.getStartTime().toString());
+            } else {
+                pstmt.setNull(8, Types.VARCHAR);
+            }
+            
+            pstmt.setInt(9, taskInfo.getStatus());
+            
+            if (taskInfo.getLastExecuteTime() != null) {
+                pstmt.setString(10, taskInfo.getLastExecuteTime().toString());
+            } else {
+                pstmt.setNull(10, Types.VARCHAR);
+            }
+            
+            pstmt.setInt(11, taskInfo.getId());
+            
+            int rowsAffected = pstmt.executeUpdate();
+            if (rowsAffected > 0) {
+                logger.debug("更新任务信息成功: ID=" + taskInfo.getId());
+            } else {
+                logger.warn("未找到要更新的任务: ID=" + taskInfo.getId());
+            }
+        } catch (SQLException e) {
+            logger.error("更新任务信息失败: ID=" + taskInfo.getId() + " - " + e.getMessage(), e);
+            throw e;
+        }
+    }
+    
+    /**
+     * 获取所有任务信息
+     * @return 任务信息列表
+     * @throws SQLException 数据库异常
+     */
+    public static List<TaskInfo> getAllTaskInfo() throws SQLException {
+        List<TaskInfo> taskList = new ArrayList<>();
+        String sql = "SELECT * FROM tasks ORDER BY id DESC";
+        
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            
+            while (rs.next()) {
+                TaskInfo taskInfo = new TaskInfo();
+                taskInfo.setId(rs.getInt("id"));
+                taskInfo.setDeviceId(rs.getString("device_id"));
+                taskInfo.setCronExpression(rs.getString("cron_expression"));
+                taskInfo.setDescription(rs.getString("description"));
+                taskInfo.setTaskType(rs.getString("task_type"));
+                taskInfo.setTaskName(rs.getString("task_name"));
+                taskInfo.setEnabled(rs.getBoolean("enabled"));
+                taskInfo.setRemark(rs.getString("remark"));
+                taskInfo.setStatus(rs.getInt("status"));
+                
+                // 处理LocalDateTime类型
+                String createdAtStr = rs.getString("created_at");
+                if (createdAtStr != null) {
+                    taskInfo.setCreatedAt(LocalDateTime.parse(createdAtStr));
+                }
+                
+                String startTimeStr = rs.getString("start_time");
+                if (startTimeStr != null) {
+                    taskInfo.setStartTime(LocalDateTime.parse(startTimeStr));
+                }
+                
+                String lastExecuteTimeStr = rs.getString("last_execute_time");
+                if (lastExecuteTimeStr != null) {
+                    taskInfo.setLastExecuteTime(LocalDateTime.parse(lastExecuteTimeStr));
+                }
+                
+                taskList.add(taskInfo);
+            }
+            
+            logger.debug("获取所有任务信息成功，共" + taskList.size() + "条");
+        } catch (SQLException e) {
+            logger.error("获取所有任务信息失败: " + e.getMessage(), e);
+            throw e;
+        }
+        
+        return taskList;
+    }
+    
+
+    
+    /**
+     * 添加任务信息
+     * @param taskInfo 任务信息对象
+     * @throws SQLException 数据库异常
+     */
+    public static void addTaskInfo(TaskInfo taskInfo) throws SQLException {
+        String sql = "INSERT INTO tasks (device_id, cron_expression, description, task_type, " +
+                    "task_name, enabled, remark, start_time, status, last_execute_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            pstmt.setString(1, taskInfo.getDeviceId());
+            pstmt.setString(2, taskInfo.getCronExpression());
+            pstmt.setString(3, taskInfo.getDescription());
+            pstmt.setString(4, taskInfo.getTaskType());
+            pstmt.setString(5, taskInfo.getTaskName());
+            pstmt.setBoolean(6, taskInfo.isEnabled());
+            pstmt.setString(7, taskInfo.getRemark());
+            
+            // 处理LocalDateTime类型
+            if (taskInfo.getStartTime() != null) {
+                pstmt.setString(8, taskInfo.getStartTime().toString());
+            } else {
+                pstmt.setNull(8, Types.VARCHAR);
+            }
+            
+            pstmt.setInt(9, taskInfo.getStatus());
+            
+            if (taskInfo.getLastExecuteTime() != null) {
+                pstmt.setString(10, taskInfo.getLastExecuteTime().toString());
+            } else {
+                pstmt.setNull(10, Types.VARCHAR);
+            }
+            
+            int rowsAffected = pstmt.executeUpdate();
+            if (rowsAffected > 0) {
+                logger.debug("添加任务信息成功: " + taskInfo.getTaskName());
+            }
+        } catch (SQLException e) {
+            logger.error("添加任务信息失败: " + e.getMessage(), e);
+            throw e;
+        }
+    }
+    
+    public static void addTask(TaskItem taskItem) throws SQLException {
+        String sql = "INSERT INTO tasks (task_name, cron_expression, device_id, status, remark, start_time, last_execute_time) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?)";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, taskItem.getTaskName());
+            stmt.setString(2, taskItem.getCronExpression());
+            stmt.setString(3, taskItem.getDeviceId());
+            stmt.setInt(4, taskItem.getStatus());
+            if (taskItem.getRemark() != null) {
+                stmt.setString(5, taskItem.getRemark());
+            } else {
+                stmt.setNull(5, Types.VARCHAR);
+            }
+            if (taskItem.getStartTime() != null) {
+                stmt.setTimestamp(6, Timestamp.valueOf(taskItem.getStartTime()));
+            } else {
+                stmt.setNull(6, Types.TIMESTAMP);
+            }
+            if (taskItem.getLastExecuteTime() != null) {
+                stmt.setTimestamp(7, Timestamp.valueOf(taskItem.getLastExecuteTime()));
+            } else {
+                stmt.setNull(7, Types.TIMESTAMP);
+            }
+            stmt.executeUpdate();
+            logger.info("添加任务成功: " + taskItem.getTaskName());
+        } catch (SQLException e) {
+            logger.error("添加任务失败: " + e.getMessage(), e);
+            throw e;
+        }
+    }
+    
+    /**
+     * 更新所有任务状态
+     * @param status 新状态值
+     * @throws SQLException 数据库异常
+     */
+    public static void updateAllTasksStatus(int status) throws SQLException {
+        String sql = "UPDATE tasks SET status = ?";
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            pstmt.setInt(1, status);
+            int rowsAffected = pstmt.executeUpdate();
+            
+            logger.debug("更新所有任务状态成功，共" + rowsAffected + "条任务");
+        } catch (SQLException e) {
+            logger.error("更新所有任务状态失败: " + e.getMessage(), e);
+            throw e;
+        }
+    }
+    
+    public static void updateTask(TaskItem taskItem) throws SQLException {
+        String sql = "UPDATE tasks SET task_name = ?, cron_expression = ?, device_id = ?, status = ?, " +
+                     "remark = ?, start_time = ?, last_execute_time = ? WHERE id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, taskItem.getTaskName());
+            stmt.setString(2, taskItem.getCronExpression());
+            stmt.setString(3, taskItem.getDeviceId());
+            stmt.setInt(4, taskItem.getStatus());
+            if (taskItem.getRemark() != null) {
+                stmt.setString(5, taskItem.getRemark());
+            } else {
+                stmt.setNull(5, Types.VARCHAR);
+            }
+            if (taskItem.getStartTime() != null) {
+                stmt.setTimestamp(6, Timestamp.valueOf(taskItem.getStartTime()));
+            } else {
+                stmt.setNull(6, Types.TIMESTAMP);
+            }
+            if (taskItem.getLastExecuteTime() != null) {
+                stmt.setTimestamp(7, Timestamp.valueOf(taskItem.getLastExecuteTime()));
+            } else {
+                stmt.setNull(7, Types.TIMESTAMP);
+            }
+            stmt.setInt(8, taskItem.getId());
+            stmt.executeUpdate();
+            logger.info("更新任务成功，任务ID: " + taskItem.getId());
+        } catch (SQLException e) {
+            logger.error("更新任务失败: " + e.getMessage(), e);
+            throw e;
+        }
     }
     
 }

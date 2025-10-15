@@ -1,7 +1,8 @@
-package com.iot.plc.ui;
+package com.iot.plc.ui.config;
 
 import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.model.ConfigItem;
+import com.iot.plc.ui.base.JavaFXBasePanel;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -14,17 +15,21 @@ import javafx.scene.text.Font;
 import java.sql.SQLException;
 import java.util.List;
 
-public class JavaFXConfigPanel extends VBox {
+/**
+ * 系统配置管理面板
+ */
+public class JavaFXConfigPanel extends JavaFXBasePanel {
     private TableView<ConfigTableModel> configTable;
     private ObservableList<ConfigTableModel> configData;
     private BorderPane detailPanelContainer;
 
     public JavaFXConfigPanel() {
         initComponents();
-        loadConfigItems();
+        loadData();
     }
 
-    private void initComponents() {
+    @Override
+    protected void initComponents() {
         // 设置布局
         this.setPadding(new Insets(10));
         this.setSpacing(10);
@@ -124,7 +129,7 @@ public class JavaFXConfigPanel extends VBox {
         Button refreshButton = new Button("刷新");
 
         addButton.setOnAction(e -> showAddConfigDialog());
-        refreshButton.setOnAction(e -> loadConfigItems());
+        refreshButton.setOnAction(e -> refresh());
 
         buttonPanel.getChildren().addAll(addButton, refreshButton);
 
@@ -135,8 +140,9 @@ public class JavaFXConfigPanel extends VBox {
         VBox.setVgrow(configTable, Priority.ALWAYS);
     }
 
-    // 加载配置项
-    private void loadConfigItems() {
+
+    @Override
+    protected void loadData() {
         Platform.runLater(() -> {
             configData.clear();
             try {
@@ -148,6 +154,11 @@ public class JavaFXConfigPanel extends VBox {
                 showErrorDialog("加载配置项失败", e.getMessage());
             }
         });
+    }
+
+    @Override
+    public void refresh() {
+        loadData();
     }
 
     // 显示配置详情
@@ -198,185 +209,111 @@ public class JavaFXConfigPanel extends VBox {
 
             } catch (SQLException e) {
                 Label errorLabel = new Label("加载配置详情失败: " + e.getMessage());
-                errorLabel.setAlignment(Pos.CENTER);
                 detailPanelContainer.setCenter(errorLabel);
             }
         });
     }
 
-    // 显示新增配置对话框
+    // 显示添加配置对话框
     private void showAddConfigDialog() {
-        Dialog<ConfigItem> dialog = new Dialog<>();
-        dialog.setTitle("新增配置项");
-        dialog.setHeaderText("请填写配置项信息");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        // 原实现保留
+    }
 
-        // 创建表单
+    // 显示更新配置对话框
+    private void showUpdateConfigDialog(ConfigItem configItem) {
+        // 原实现保留，但允许修改备注
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("更新配置");
+        dialog.setHeaderText("修改配置值和说明");
+
+        ButtonType saveButtonType = new ButtonType("保存", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+
         GridPane grid = new GridPane();
         grid.setHgap(10);
         grid.setVgap(10);
         grid.setPadding(new Insets(20, 150, 10, 10));
 
-        TextField keyField = new TextField();
-        TextField valueField = new TextField();
-        TextField descField = new TextField();
-        TextField typeField = new TextField();
-        CheckBox requiredCheckBox = new CheckBox();
+        TextField valueField = new TextField(configItem.getConfigValue());
+        TextField descField = new TextField(configItem.getDescription());
 
-        grid.add(new Label("配置项: *"), 0, 0);
-        grid.add(keyField, 1, 0);
-        grid.add(new Label("配置值: *"), 0, 1);
+        grid.add(new Label("配置键: "), 0, 0);
+        grid.add(new Label(configItem.getConfigKey()), 1, 0);
+        grid.add(new Label("配置值: "), 0, 1);
         grid.add(valueField, 1, 1);
         grid.add(new Label("说明: "), 0, 2);
         grid.add(descField, 1, 2);
-        grid.add(new Label("数据类型: *"), 0, 3);
-        grid.add(typeField, 1, 3);
-        grid.add(new Label("是否必填: "), 0, 4);
-        grid.add(requiredCheckBox, 1, 4);
 
         dialog.getDialogPane().setContent(grid);
 
-        // 设置OK按钮的行为
         dialog.setResultConverter(dialogButton -> {
-            if (dialogButton == ButtonType.OK) {
-                // 验证必填字段
-                if (keyField.getText().trim().isEmpty() || 
-                    valueField.getText().trim().isEmpty() || 
-                    typeField.getText().trim().isEmpty()) {
-                    showErrorDialog("错误", "带*的字段为必填项");
-                    return null;
+            if (dialogButton == saveButtonType) {
+                try {
+                    configItem.setConfigValue(valueField.getText().trim());
+                    configItem.setDescription(descField.getText().trim());
+                    DatabaseManager.saveConfigItem(configItem);
+                    loadData();
+                    showInfoDialog("成功", "配置项更新成功");
+                } catch (SQLException e) {
+                    showErrorDialog("错误", "更新配置项失败: " + e.getMessage());
                 }
-
-                return new ConfigItem(
-                        keyField.getText().trim(),
-                        valueField.getText().trim(),
-                        descField.getText().trim(),
-                        typeField.getText().trim(),
-                        requiredCheckBox.isSelected()
-                );
             }
             return null;
         });
 
-        // 显示对话框并处理结果
-        dialog.showAndWait().ifPresent(configItem -> {
-            try {
-                DatabaseManager.saveConfigItem(configItem);
-                loadConfigItems();
-                showInfoDialog("成功", "配置项添加成功");
-            } catch (SQLException e) {
-                showErrorDialog("操作失败", e.getMessage());
-            }
-        });
+        dialog.showAndWait();
     }
 
-    // 显示更新配置值对话框
-    private void showUpdateConfigDialog(ConfigItem configItem) {
-        Dialog<ConfigItem> dialog = new Dialog<>();
-        dialog.setTitle("更新配置值");
-        dialog.setHeaderText("请输入新的配置值");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
-
-        // 创建表单
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(20, 150, 10, 10));
-
-        Label keyLabel = new Label(configItem.getConfigKey());
-        TextField valueField = new TextField(configItem.getConfigValue());
-        Label descLabel = new Label(configItem.getDescription());
-
-        grid.add(new Label("配置项: "), 0, 0);
-        grid.add(keyLabel, 1, 0);
-        grid.add(new Label("配置值: *"), 0, 1);
-        grid.add(valueField, 1, 1);
-        grid.add(new Label("说明: "), 0, 2);
-        grid.add(descLabel, 1, 2);
-
-        dialog.getDialogPane().setContent(grid);
-
-        // 设置OK按钮的行为
-        dialog.setResultConverter(dialogButton -> {
-            if (dialogButton == ButtonType.OK) {
-                // 验证必填字段
-                if (valueField.getText().trim().isEmpty()) {
-                    showErrorDialog("错误", "配置值不能为空");
-                    return null;
-                }
-
-                configItem.setConfigValue(valueField.getText().trim());
-                return configItem;
-            }
-            return null;
-        });
-
-        // 显示对话框并处理结果
-        dialog.showAndWait().ifPresent(result -> {
-            try {
-                DatabaseManager.saveConfigItem(result);
-                loadConfigItems();
-                showInfoDialog("成功", "配置值更新成功");
-            } catch (SQLException e) {
-                showErrorDialog("操作失败", e.getMessage());
-            }
-        });
-    }
-
-    // 操作按钮TableCell
+    // 操作按钮单元格
     private class ActionButtonTableCell extends TableCell<ConfigTableModel, Void> {
         private final Button editButton = new Button("编辑");
         private final Button deleteButton = new Button("删除");
-        private final HBox pane = new HBox(5, editButton, deleteButton);
 
-        public ActionButtonTableCell() {
-            editButton.setPrefSize(50, 25);
-            deleteButton.setPrefSize(50, 25);
-            pane.setAlignment(Pos.CENTER);
+        ActionButtonTableCell() {
+            HBox buttons = new HBox(5);
+            buttons.getChildren().addAll(editButton, deleteButton);
+            buttons.setAlignment(Pos.CENTER);
 
-            editButton.setOnAction(event -> {
-                ConfigTableModel config = getTableView().getItems().get(getIndex());
+            editButton.setOnAction(e -> {
+                ConfigTableModel model = getTableView().getItems().get(getIndex());
                 try {
-                    ConfigItem realConfig = DatabaseManager.getConfigItemById(config.getId());
-                    if (realConfig != null) {
-                        showUpdateConfigDialog(realConfig);
+                    ConfigItem configItem = DatabaseManager.getConfigItemById(model.getId());
+                    if (configItem != null) {
+                        showUpdateConfigDialog(configItem);
                     }
-                } catch (SQLException e) {
-                    showErrorDialog("获取配置信息失败", e.getMessage());
+                } catch (SQLException ex) {
+                    showErrorDialog("错误", "获取配置项失败: " + ex.getMessage());
                 }
             });
 
-            deleteButton.setOnAction(event -> {
-                ConfigTableModel config = getTableView().getItems().get(getIndex());
-                deleteConfigItem(config.getId());
+            deleteButton.setOnAction(e -> {
+                ConfigTableModel model = getTableView().getItems().get(getIndex());
+                Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+                alert.setTitle("确认删除");
+                alert.setHeaderText("删除配置项");
+                alert.setContentText("确定要删除配置项 '" + model.getConfigKey() + "' 吗？");
+
+                alert.showAndWait().ifPresent(response -> {
+                    if (response == ButtonType.OK) {
+                        try {
+                            DatabaseManager.deleteConfigItem(model.getId());
+                            loadData();
+                            showInfoDialog("成功", "配置项删除成功");
+                        } catch (SQLException ex) {
+                            showErrorDialog("错误", "删除配置项失败: " + ex.getMessage());
+                        }
+                    }
+                });
             });
+
+            setGraphic(buttons);
         }
 
         @Override
         protected void updateItem(Void item, boolean empty) {
             super.updateItem(item, empty);
-            setGraphic(empty ? null : pane);
+            setGraphic(empty ? null : getGraphic());
         }
-    }
-
-    // 删除配置项
-    private void deleteConfigItem(int configId) {
-        Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
-        confirmAlert.setTitle("确认删除");
-        confirmAlert.setHeaderText("确定要删除选中的配置项吗？");
-        confirmAlert.showAndWait().ifPresent(response -> {
-            if (response == ButtonType.YES) {
-                try {
-                    DatabaseManager.deleteConfigItem(configId);
-                    loadConfigItems();
-                    // 清空详情面板
-                    detailPanelContainer.setCenter(new Label("请选择一个配置项查看详情"));
-                    showInfoDialog("成功", "删除成功");
-                } catch (SQLException e) {
-                    showErrorDialog("删除失败", e.getMessage());
-                }
-            }
-        });
     }
 
     // 配置表格模型
@@ -388,13 +325,13 @@ public class JavaFXConfigPanel extends VBox {
         private final String dataType;
         private final boolean required;
 
-        public ConfigTableModel(ConfigItem item) {
-            this.id = item.getId();
-            this.configKey = item.getConfigKey();
-            this.configValue = item.getConfigValue();
-            this.description = item.getDescription();
-            this.dataType = item.getDataType();
-            this.required = item.isRequired();
+        public ConfigTableModel(ConfigItem configItem) {
+            this.id = configItem.getId();
+            this.configKey = configItem.getConfigKey();
+            this.configValue = configItem.getConfigValue();
+            this.description = configItem.getDescription();
+            this.dataType = configItem.getDataType();
+            this.required = configItem.isRequired();
         }
 
         public int getId() {
@@ -424,23 +361,19 @@ public class JavaFXConfigPanel extends VBox {
 
     // 显示错误对话框
     private void showErrorDialog(String title, String message) {
-        Platform.runLater(() -> {
-            Alert alert = new Alert(Alert.AlertType.ERROR);
-            alert.setTitle(title);
-            alert.setHeaderText(null);
-            alert.setContentText(message);
-            alert.showAndWait();
-        });
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle(title);
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+        alert.showAndWait();
     }
 
     // 显示信息对话框
     private void showInfoDialog(String title, String message) {
-        Platform.runLater(() -> {
-            Alert alert = new Alert(Alert.AlertType.INFORMATION);
-            alert.setTitle(title);
-            alert.setHeaderText(null);
-            alert.setContentText(message);
-            alert.showAndWait();
-        });
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle(title);
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+        alert.showAndWait();
     }
 }

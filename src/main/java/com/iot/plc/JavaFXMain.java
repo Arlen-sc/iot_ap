@@ -1,11 +1,11 @@
 package com.iot.plc;
 
 import com.iot.plc.logger.Logger;
-import com.iot.plc.ui.JavaFXLogPanel;
-import com.iot.plc.ui.LogsManagementPanel;
-import com.iot.plc.ui.JavaFXConfigPanel;
+import com.iot.plc.ui.logs.JavaFXLogPanel;
+import com.iot.plc.ui.logs.LogsManagementPanel;
+import com.iot.plc.ui.config.JavaFXConfigPanel;
 import com.iot.plc.ui.AutoProcessPanel;
-import com.iot.plc.service.ConfigService;
+import com.iot.plc.service.InitConfigService;
 import javafx.application.Application;
 import javafx.scene.Scene;
 import javafx.scene.control.Tab;
@@ -18,9 +18,9 @@ public class JavaFXMain extends Application {
 
     @Override
     public void start(Stage primaryStage) {
-        // 初始化配置服务
-        ConfigService.getInstance();
-        Logger.getInstance().info("配置服务已初始化");
+        // 初始化系统配置和数据库
+        InitConfigService.getInstance().initializeSystem();
+        Logger.getInstance().info("系统初始化完成");
 
         // 创建主布局
         VBox root = new VBox();

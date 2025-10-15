@@ -1,6 +1,6 @@
 package com.iot.plc.logger;
 
-import com.iot.plc.ui.JavaFXLogPanel;
+import com.iot.plc.ui.logs.JavaFXLogPanel;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.StringJoiner;

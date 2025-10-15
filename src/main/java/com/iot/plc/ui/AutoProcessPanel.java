@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
+import com.iot.plc.enumx.TcpServiceEnum;
 import java.sql.SQLException;
 import java.util.UUID;
 import javafx.beans.binding.Bindings;
@@ -33,17 +34,18 @@ import javafx.scene.layout.GridPane;
 import com.iot.plc.config.NetworkConfig;
 import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.enumx.ProtocolType;
-import com.iot.plc.enumx.ServiceType;
 import com.iot.plc.listener.NetworkListener;
 import com.iot.plc.service.EmsService;
 import com.iot.plc.service.ConfigService;
 import com.iot.plc.service.SerialPortService;
 import com.iot.plc.service.NetworkService;
+import com.iot.plc.service.LogService;
 import com.iot.plc.model.ConfigItem;
 import com.iot.plc.model.DataMode;
 import com.iot.plc.model.ProgramResult;
 import com.iot.plc.model.DeviceResult;
 import com.iot.plc.logger.Logger;
+import com.iot.plc.ui.config.NetworkConfigPanel;
 
 /**
  * 自动处理面板
@@ -120,6 +122,24 @@ public class AutoProcessPanel extends BorderPane {
         initUI();
         startStatusUpdateThread();
         loadExpectedBarcodeCountFromConfig();
+        
+        // 添加LogService监听器，确保Logger的日志能够显示在UI中
+        setupLogListener();
+    }
+    
+    /**
+     * 设置日志监听器，将Logger的日志转发到UI的logArea
+     */
+    private void setupLogListener() {
+        LogService logService = LogService.getInstance();
+        logService.addLogListener(message -> {
+            // 使用Platform.runLater确保在JavaFX线程中更新UI
+            Platform.runLater(() -> {
+                logArea.appendText(message + "\n");
+                // 自动滚动到底部
+                logArea.setScrollTop(Double.MAX_VALUE);
+            });
+        });
     }
 
     /**
@@ -407,7 +427,7 @@ public class AutoProcessPanel extends BorderPane {
 
             // 只实现新版方法，支持服务类型区分
             @Override
-            public void onDataReceived(String data, ServiceType serviceType) {
+            public void onDataReceived(String data, TcpServiceEnum serviceType) {
                 // 根据服务类型获取别名信息
                 final String alias;
                 NetworkConfig config = networkService.getConfig(serviceType);
@@ -417,18 +437,37 @@ public class AutoProcessPanel extends BorderPane {
                     alias = "";
                 }
                 
-                // 如果是扫码机服务，保存条码数据
-                if (serviceType == ServiceType.SCANNER && data != null && !data.trim().isEmpty()) {
-                    try {
-                        // 保存条码数据到数据库
-                        String deviceId = "SCANNER_NETWORK";
-                        String portName = "NETWORK_PORT";
-                        DatabaseManager.saveBarcodeData(deviceId, data.trim(), portName);
-                        
-                        // 调用封装的条码处理方法
-                        processBarcodeData(data.trim(), "TCP", "扫码机扫描");
-                    } catch (SQLException e) {
-                        logger.error("保存扫码机条码数据失败: " + e.getMessage());
+                // 根据不同的服务类型处理数据
+                if (data != null && !data.trim().isEmpty()) {
+                    if (serviceType == TcpServiceEnum.SCANNER) {
+                        // 扫码机服务，保存条码数据
+                        try {
+                            // 保存条码数据到数据库
+                            String deviceId = "SCANNER_NETWORK";
+                            String portName = "NETWORK_PORT";
+                            DatabaseManager.saveBarcodeData(deviceId, data.trim(), portName);
+                            
+                            // 调用封装的条码处理方法
+                            scannerProcessBarcodeData(data.trim(), "TCP", "扫码机扫描");
+                        } catch (SQLException e) {
+                            logger.error("保存扫码机条码数据失败: " + e.getMessage());
+                        }
+                    } else if (serviceType == TcpServiceEnum.BURNER) {
+                        // 烧录机服务，处理特殊制令单数据
+                        try {
+                            log(data);
+                            // 调用封装的条码处理方法处理烧录机发送的特殊制令单
+                            burnerProcessBarcodeData(data.trim());
+                        } catch (Exception e) {
+                            logger.error("烧录机信息处理失败: " + e.getMessage());
+                        }
+                    } else if (serviceType == TcpServiceEnum.PLC) {
+                        // PLC服务，记录接收到的数据
+                        try {
+                            log("[PLC数据] " + data.trim());
+                        } catch (Exception e) {
+                            logger.error("PLC信息处理失败: " + e.getMessage());
+                        }
                     }
                 }
                 
@@ -439,7 +478,7 @@ public class AutoProcessPanel extends BorderPane {
             }
 
             @Override
-            public void onDataReceived(byte[] data, ServiceType serviceType) {
+            public void onDataReceived(byte[] data, TcpServiceEnum serviceType) {
                 // 将字节数组转换为字符串
                 final String dataStr = new String(data);
                 
@@ -452,15 +491,25 @@ public class AutoProcessPanel extends BorderPane {
                     alias = "";
                 }
                 
-                // 如果是扫码机服务，保存条码数据
-                if (serviceType == ServiceType.SCANNER && dataStr != null && !dataStr.trim().isEmpty()) {
-                    try {
-                        // 保存条码数据到数据库
-                        String deviceId = "SCANNER_NETWORK";
-                        String portName = "NETWORK_PORT";
-                        DatabaseManager.saveBarcodeData(deviceId, dataStr.trim(), portName);
-                    } catch (SQLException e) {
-                        logger.error("保存扫码机条码数据失败: " + e.getMessage());
+                // 根据不同的服务类型处理数据
+                if (dataStr != null && !dataStr.trim().isEmpty()) {
+                    if (serviceType == TcpServiceEnum.SCANNER) {
+                        // 扫码机服务，保存条码数据
+                        try {
+                            // 保存条码数据到数据库
+                            String deviceId = "SCANNER_NETWORK";
+                            String portName = "NETWORK_PORT";
+                            DatabaseManager.saveBarcodeData(deviceId, dataStr.trim(), portName);
+                        } catch (SQLException e) {
+                            logger.error("保存扫码机条码数据失败: " + e.getMessage());
+                        }
+                    } else if (serviceType == TcpServiceEnum.PLC) {
+                        // PLC服务，记录接收到的数据
+                        try {
+                            log("[PLC数据] " + dataStr.trim());
+                        } catch (Exception e) {
+                            logger.error("PLC信息处理失败: " + e.getMessage());
+                        }
                     }
                 }
                 
@@ -471,43 +520,43 @@ public class AutoProcessPanel extends BorderPane {
             }
 
             @Override
-            public void onConnectionStatusChanged(boolean connected, ServiceType serviceType) {
+            public void onConnectionStatusChanged(boolean connected, TcpServiceEnum serviceType) {
                 handleConnectionStatusChanged(connected, serviceType);
             }
 
             @Override
-            public void onConnectionCountChanged(int count, ServiceType serviceType) {
+            public void onConnectionCountChanged(int count, TcpServiceEnum serviceType) {
                 handleConnectionCountChanged(count, serviceType);
             }
 
             // 处理连接状态变化的私有辅助方法
-            private void handleConnectionStatusChanged(boolean connected, ServiceType serviceType) {
+            private void handleConnectionStatusChanged(boolean connected, TcpServiceEnum serviceType) {
                 // 在JavaFX应用线程中更新UI
                 Platform.runLater(() -> {
                     String status = connected ? "开启" : "关闭";
 
                     // 根据服务类型记录不同的日志和更新不同的状态显示
-                    if (serviceType == ServiceType.BURNER) {
+                    if (serviceType == TcpServiceEnum.BURNER) {
                         log("[烧录机网络状态] " + status);
                         plcStatus.set(status);
                         // 获取烧录机服务的连接数
                         int burnerConnections = networkService
-                                .getConnectedClientCount(ServiceType.BURNER);
+                                .getConnectedClientCount(TcpServiceEnum.BURNER);
                         connectionStatus.set(burnerConnections + "个连接");
-                    } else if (serviceType == ServiceType.SCANNER) {
+                    } else if (serviceType == TcpServiceEnum.SCANNER) {
                         log("[扫码机网络状态] " + status);
                         scannerStatus.set(status);
                         // 获取扫码机服务的连接数
                         int scannerConnections = networkService
-                                .getConnectedClientCount(ServiceType.SCANNER);
+                                .getConnectedClientCount(TcpServiceEnum.SCANNER);
                         scannerConnectionStatus.set(scannerConnections + "个连接");
                     }
 
                     // 只有当两个服务都处于开启状态时，才将按钮标记为选中状态
                     if (serverToggleButton != null) {
-                        boolean bothServicesRunning = networkService.isServiceRunning(ServiceType.BURNER)
+                        boolean bothServicesRunning = networkService.isServiceRunning(TcpServiceEnum.BURNER)
                                 &&
-                                networkService.isServiceRunning(ServiceType.SCANNER);
+                                networkService.isServiceRunning(TcpServiceEnum.SCANNER);
                         serverToggleButton.setSelected(bothServicesRunning);
                         serverToggleButton.setText(bothServicesRunning ? "关闭" : "开启");
                     }
@@ -515,18 +564,20 @@ public class AutoProcessPanel extends BorderPane {
             }
 
             // 处理连接数变化的私有辅助方法
-            private void handleConnectionCountChanged(int count, ServiceType serviceType) {
+            private void handleConnectionCountChanged(int count, TcpServiceEnum serviceType) {
                 // 在JavaFX应用线程中更新连接数显示
                 Platform.runLater(() -> {
-                    if (serviceType == ServiceType.BURNER) {
+                    if (serviceType == TcpServiceEnum.BURNER) {
                         connectionStatus.set(count + "个连接");
-                    } else if (serviceType == ServiceType.SCANNER) {
+                    } else if (serviceType == TcpServiceEnum.SCANNER) {
                         scannerConnectionStatus.set(count + "个连接");
                     }
                 });
             }
         });
     }
+
+
 
     // 添加网络数据到显示区域，并保持只显示100条
     private void addNetworkData(String data) {
@@ -671,7 +722,7 @@ public class AutoProcessPanel extends BorderPane {
                     }
 
                     // 创建烧录机服务配置并启动
-                    NetworkConfig burnerConfig = new NetworkConfig(ServiceType.BURNER, burnerHost, Integer.parseInt(burnerPort));
+                    NetworkConfig burnerConfig = new NetworkConfig(TcpServiceEnum.BURNER, burnerHost, Integer.parseInt(burnerPort));
                     burnerConfig.setProtocolType(burnerProtocol);
                     burnerConfig.setDataMode(dataMode);
                     burnerConfig.setAlias(burnerAlias);
@@ -701,15 +752,61 @@ public class AutoProcessPanel extends BorderPane {
                     }
 
                     // 创建扫码机服务配置并启动
-                    NetworkConfig scannerConfig = new NetworkConfig(ServiceType.SCANNER, scannerHost, Integer.parseInt(scannerPort));
+                    NetworkConfig scannerConfig = new NetworkConfig(TcpServiceEnum.SCANNER, scannerHost, Integer.parseInt(scannerPort));
                     scannerConfig.setProtocolType(scannerProtocol);
                     scannerConfig.setDataMode(dataMode);
                     scannerConfig.setAlias(scannerAlias);
                     networkService.startService(scannerConfig);
                     log("[操作结果] 已启动扫码机服务，协议: " + scannerProtocol + ", 地址: " + scannerHost + ":" + scannerPort
                             + ", 数据格式: " + dataMode);
+                    
+                    // 获取PLC服务配置
+                    String plcHost = "127.0.0.1";
+                    String plcPort = "8890";
+                    try {
+                        plcHost = ConfigService.getInstance().getConfigValueByKey("PLC.network.host") != null
+                                ? ConfigService.getInstance().getConfigValueByKey("PLC.network.host")
+                                : plcHost;
+                        plcPort = ConfigService.getInstance().getConfigValueByKey("PLC.network.port") != null
+                                ? ConfigService.getInstance().getConfigValueByKey("PLC.network.port")
+                                : plcPort;
+                    } catch (Exception ex) {
+                        log("[配置加载错误] 加载PLC网络配置失败，使用默认值: " + ex.getMessage());
+                    }
+                    
+                    // 加载PLC协议类型
+                    ProtocolType plcProtocol = ProtocolType.TCP_SERVER; // 默认值
+                    try {
+                        String plcProtocolStr = ConfigService.getInstance().getConfigValueByKey("PLC.protocol");
+                        if (plcProtocolStr != null) {
+                            plcProtocol = ProtocolType.valueOf(plcProtocolStr);
+                        }
+                    } catch (Exception ex) {
+                        log("[配置加载错误] 加载PLC协议类型失败，使用默认值TCP_SERVER: " + ex.getMessage());
+                    }
+                    
+                    // 加载PLC别名
+                    String plcAlias = ""; // 默认空别名
+                    try {
+                        plcAlias = ConfigService.getInstance().getConfigValueByKey("PLC.alias") != null
+                                ? ConfigService.getInstance().getConfigValueByKey("PLC.alias")
+                                : "";
+                    } catch (Exception ex) {
+                        log("[配置加载错误] 加载PLC别名失败: " + ex.getMessage());
+                    }
+                    
+                    // 创建PLC服务配置并启动
+                    NetworkConfig plcConfig = new NetworkConfig(TcpServiceEnum.PLC, plcHost, Integer.parseInt(plcPort));
+                    plcConfig.setProtocolType(plcProtocol);
+                    plcConfig.setDataMode(dataMode);
+                    plcConfig.setAlias(plcAlias);
+                    networkService.startService(plcConfig);
+                    log("[操作结果] 已启动PLC服务，协议: " + plcProtocol + ", 地址: " + plcHost + ":" + plcPort
+                            + ", 数据格式: " + dataMode);
 
                     serverToggleButton.setText("关闭");
+                    // 启动其他服务
+                    getBurnerBarcodeCount();
                 } catch (Exception ex) {
                     log("[操作错误] 启动Server服务失败: " + ex.getMessage());
                     ex.printStackTrace();
@@ -817,6 +914,11 @@ public class AutoProcessPanel extends BorderPane {
         return statusBox;
     }
 
+
+
+    /**
+     * 应用用户输入的预期条码数量
+     */
     private void applyExpectedCount() {
         log("[操作] 用户点击了'应用'按钮，确认设置预期条码数量");
         try {
@@ -882,6 +984,7 @@ public class AutoProcessPanel extends BorderPane {
         }
     }
 
+    /** */
     private VBox createScanBox() {
         VBox scanBox = new VBox(5);
         scanBox.setPadding(new Insets(5));
@@ -1291,13 +1394,12 @@ public class AutoProcessPanel extends BorderPane {
      */
     private void showBurnerConfigDialog() {
         try {
-            // BurnerConfigPanel configPanel = new BurnerConfigPanel();
-            // configPanel.show();
-            NetworkConfigPanel configPanel = new NetworkConfigPanel();
+            // 使用NetworkConfigPanel显示扫码机配置界面
+            NetworkConfigPanel configPanel = new NetworkConfigPanel(TcpServiceEnum.BURNER);
             configPanel.show();
         } catch (Exception e) {
-            log("Failed to open network config panel: " + e.getMessage());
-            showSuccessMessage("打开网络配置面板失败: " + e.getMessage());
+            log("[配置加载错误] 打开烧录机配置面板失败: " + e.getMessage());
+            showSuccessMessage("打开烧录机配置面板失败: " + e.getMessage());
         }
     }
 
@@ -1305,9 +1407,28 @@ public class AutoProcessPanel extends BorderPane {
      * 显示扫码机配置对话框
      */
     private void showScannerConfigDialog() {
-        // 使用NetworkConfigPanel显示扫码机配置界面
-        NetworkConfigPanel configPanel = new NetworkConfigPanel(NetworkConfigPanel.ConfigType.SCANNER);
-        configPanel.show();
+        try {
+            // 使用NetworkConfigPanel显示扫码机配置界面
+            NetworkConfigPanel configPanel = new NetworkConfigPanel(TcpServiceEnum.SCANNER);
+            configPanel.show();
+        } catch (Exception e) {
+            log("[配置加载错误] 打开扫码机配置面板失败: " + e.getMessage());
+            showSuccessMessage("打开扫码机配置面板失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 显示PLC配置对话框
+     */
+    private void showPlcConfigDialog() {
+        try {
+            // 使用NetworkConfigPanel显示PLC配置界面
+            NetworkConfigPanel configPanel = new NetworkConfigPanel(TcpServiceEnum.PLC);
+            configPanel.show();
+        } catch (Exception e) {
+            log("[配置加载错误] 打开PLC配置面板失败: " + e.getMessage());
+            showSuccessMessage("打开PLC配置面板失败: " + e.getMessage());
+        }
     }
 
     /**
@@ -1474,19 +1595,19 @@ public class AutoProcessPanel extends BorderPane {
         log("[流程状态] 当前流程状态保持不变");
     }
 
-    // 烧录机配置相关常量
-    private static final String CONFIG_KEY_BURNER_IP = "burner.ip";
-    private static final String CONFIG_KEY_BURNER_PORT = "burner.port";
-    private static final String CONFIG_KEY_BURNER_TIMEOUT = "burner.timeout";
-    private static final String DEFAULT_BURNER_IP = "127.0.0.1";
-    private static final String DEFAULT_BURNER_PORT = "8888";
-    private static final String DEFAULT_BURNER_TIMEOUT = "30000";
+    // // 烧录机配置相关常量
+    // private static final String CONFIG_KEY_BURNER_IP = "burner.ip";
+    // private static final String CONFIG_KEY_BURNER_PORT = "burner.port";
+    // private static final String CONFIG_KEY_BURNER_TIMEOUT = "burner.timeout";
+    // private static final String DEFAULT_BURNER_IP = "127.0.0.1";
+    // private static final String DEFAULT_BURNER_PORT = "8888";
+    // private static final String DEFAULT_BURNER_TIMEOUT = "30000";
 
-    // 扫码机配置相关常量
-    private static final String CONFIG_KEY_SCANNER_COM_PORTS = "scanner.com_ports";
-    private static final String CONFIG_KEY_SCANNER_BAUD_RATE = "scanner.baud_rate";
-    private static final String DEFAULT_SCANNER_COM_PORTS = "COM1,COM2,COM3";
-    private static final String DEFAULT_SCANNER_BAUD_RATE = "9600";
+    // // 扫码机配置相关常量
+    // private static final String CONFIG_KEY_SCANNER_COM_PORTS = "scanner.com_ports";
+    // private static final String CONFIG_KEY_SCANNER_BAUD_RATE = "scanner.baud_rate";
+    // private static final String DEFAULT_SCANNER_COM_PORTS = "COM1,COM2,COM3";
+    // private static final String DEFAULT_SCANNER_BAUD_RATE = "9600";
 
     // 三方软件配置相关常量
     private static final String CONFIG_KEY_THIRD_PARTY_PATH = "third_party.path";
@@ -1511,6 +1632,12 @@ public class AutoProcessPanel extends BorderPane {
         MenuItem scannerConfigItem = new MenuItem("编辑扫码机配置");
         scannerConfigItem.setOnAction(e -> showScannerConfigDialog());
         scannerMenu.getItems().add(scannerConfigItem);
+        
+        // 创建PLC配置菜单
+        Menu plcMenu = new Menu("PLC配置");
+        MenuItem plcConfigItem = new MenuItem("编辑PLC配置");
+        plcConfigItem.setOnAction(e -> showPlcConfigDialog());
+        plcMenu.getItems().add(plcConfigItem);
 
         // 创建三方软件配置菜单
         Menu thirdPartyMenu = new Menu("三方软件配置");
@@ -1523,6 +1650,7 @@ public class AutoProcessPanel extends BorderPane {
                 // configMenu,
                 burnerMenu,
                 scannerMenu,
+                plcMenu,
                 thirdPartyMenu);
 
         return menuBar;
@@ -1550,22 +1678,89 @@ public class AutoProcessPanel extends BorderPane {
     }
 
     /**
+     * 获取烧录机条码数
+     * 通过TCP发送指令并获取返回结果
+     * @return 条码数量
+     */
+    private int getBurnerBarcodeCount() {
+        try {
+            // 从配置服务获取发送指令
+            ConfigService configService = ConfigService.getInstance();
+            String sendCommand = configService.getConfigValueByKey("burner.qty.query.command");
+            //判断是否为空
+            if (sendCommand == null || sendCommand.isEmpty()) {
+                ConfigItem configItem = new ConfigItem();
+                configItem.setConfigKey("burner.qty.query.command");
+                configItem.setConfigValue("");
+                // configItem.setConfigType("String");
+                configItem.setDataType("String");
+                configItem.setConfigDescription("烧录机数量查询指令");
+                configService.addConfigItem(configItem);
+                log("[错误]"+configItem.getConfigKey()+" 配置中未指定烧录机数量查询指令");
+                return -1;
+            }
+ 
+            // 通过NetworkService发送指令到烧录机
+            NetworkService networkService = NetworkService.getInstance();
+            networkService.sendData(sendCommand, TcpServiceEnum.BURNER);
+            log("[操作] 发送指令到烧录机: " + sendCommand);
+        } catch (Exception e) {
+            log("[错误] 获取烧录机条码数失败: " + e.getMessage());
+            return -1; // 出错返回-1
+        }
+        return 0;
+    }
+    /**
+     * 处理烧录机信息数据
+     * @param value
+     */
+    protected void burnerProcessBarcodeData(String value) {
+        log("[烧录机信息] " + value);
+        //判断信息是否是：burner.qty.query.response配置的接收指令
+        ConfigService configService = ConfigService.getInstance();
+        String receiveCommand = configService.getConfigValueByKey("burner.qty.query.response");
+        //判断是否为空
+        if (receiveCommand == null || receiveCommand.isEmpty()) {
+            ConfigItem configItem = new ConfigItem();
+            configItem.setConfigKey("burner.qty.query.response");
+            configItem.setConfigValue("");
+            // configItem.setConfigType("String");
+            configItem.setDataType("String");
+            configItem.setConfigDescription("烧录机数量查询响应指令");
+            configService.addConfigItem(configItem);
+            log("[错误]"+configItem.getConfigKey()+" 配置中未指定烧录机数量查询响应指令");
+            return;
+        }
+        if (value.contains(receiveCommand)) {
+            // 提取条码数量,把value中的receiveCommand替换为空字符串
+            String qty = value.replaceAll(receiveCommand, "").trim();
+            log("[操作结果] 烧录机条码数量: " + qty);
+            //把条码数量更新到配置服务
+            int intQty = Integer.parseInt(qty);
+            expectedBarcodeCount.set(String.valueOf(intQty));
+            expectedBarcodeCountInput.setText(String.valueOf(intQty));
+            applyExpectedCount();//应用条码数量。
+            log("[配置更新] 已将预期条码数量更新为当前条码数量: " + intQty);
+        }
+    }
+    /**
      * 处理条码数据的封装方法
      * @param barcode 条码内容
      * @param portName 端口名称
      * @param source 条码来源标识（用于日志记录）
      */
-    private void processBarcodeData(String barcode, String portName, String source) {
+    private void scannerProcessBarcodeData(String barcode, String portName, String source) {
         if (!processStarted.get()) {
             log("[操作结果] 请先启动流程");
             return;
         }
 
         if (barcode == null || barcode.isEmpty()) {
-            log("[操作结果] 无效的条码数据");
+            log("[操作结果] 无效的数据");
             return;
         }
-
+        
+        //判断是否是
         // 防重逻辑：检查当前条码是否已存在
         if (currentBarcodes.contains(barcode)) {
             log("[操作结果] 条码已存在，跳过处理: " + barcode);
@@ -1581,14 +1776,25 @@ public class AutoProcessPanel extends BorderPane {
 
         log("[操作结果] " + source + "条码: " + barcode);
         log("[数据状态] 当前条码数量: " + barcodeDataList.size() + ", 预期条码数量: " + expectedBarcodeCount.get());
+        
+        // 调用方法获取烧录机条码数并比较
+        int burnerBarcodeCount = getBurnerBarcodeCount();
+        if (burnerBarcodeCount >= 0) {
+            log("[数据状态] 烧录机条码数: " + burnerBarcodeCount);
+            if (burnerBarcodeCount != currentBarcodes.size()) {
+                log("[操作结果] 条码数量不一致，继续处理");
+            } else {
+                log("[操作结果] 条码数量一致，执行后续操作");
+                // TODO: 执行后续操作
+            }
+        }
     }
     
     private void handleManualBarcodeInput() {
         log("[操作] 用户点击了'确认输入'按钮");
         
         String barcode = barcodeInputField.getText().trim();
-        processBarcodeData(barcode, "TCP", "手动输入");
-        
+        scannerProcessBarcodeData(barcode, "TCP", "手动输入");
         // 清除输入框
         barcodeInputField.clear();
     }
@@ -1960,6 +2166,69 @@ public class AutoProcessPanel extends BorderPane {
 
         public String getMessage() {
             return message;
+        }
+    }
+    
+    // 内部类：处理日志表格模型
+    public static class ProcessLogTableModel {
+        private final SimpleStringProperty time;
+        private final SimpleStringProperty type;
+        private final SimpleStringProperty content;
+        private final SimpleStringProperty status;
+
+        public ProcessLogTableModel(String time, String type, String content, String status) {
+            this.time = new SimpleStringProperty(time);
+            this.type = new SimpleStringProperty(type);
+            this.content = new SimpleStringProperty(content);
+            this.status = new SimpleStringProperty(status);
+        }
+
+        public String getTime() {
+            return time.get();
+        }
+
+        public void setTime(String time) {
+            this.time.set(time);
+        }
+
+        public SimpleStringProperty timeProperty() {
+            return time;
+        }
+
+        public String getType() {
+            return type.get();
+        }
+
+        public void setType(String type) {
+            this.type.set(type);
+        }
+
+        public SimpleStringProperty typeProperty() {
+            return type;
+        }
+
+        public String getContent() {
+            return content.get();
+        }
+
+        public void setContent(String content) {
+            this.content.set(content);
+        }
+
+        public SimpleStringProperty contentProperty() {
+            return content;
+        }
+
+        public String getStatus() {
+            return status.get();
+        }
+
+        public void setStatus(String status) {
+            this.status.set(status);
+        }
+
+        public SimpleStringProperty statusProperty() {
+            return status;
         }
     }
 }
