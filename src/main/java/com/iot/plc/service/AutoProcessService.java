@@ -3,7 +3,7 @@ package com.iot.plc.service;
 import com.iot.plc.model.BarcodeData;
 import com.iot.plc.model.DeviceResult;
 import com.alibaba.fastjson.JSONObject;
-import com.iot.plc.enumx.ServiceType;
+import com.iot.plc.enumx.TcpServiceEnum;
 import com.iot.plc.listener.NetworkListener;
 
 import java.time.LocalDateTime;
@@ -94,9 +94,9 @@ public class AutoProcessService {
             }
             
             @Override
-            public void onDataReceived(String data, ServiceType serviceType) {
+            public void onDataReceived(String data, TcpServiceEnum serviceType) {
                 // 只处理扫码机的数据
-                if (ServiceType.SCANNER == serviceType) {
+                if (TcpServiceEnum.SCANNER == serviceType) {
                     // 处理从TCP服务接收的扫描枪消息
                     log("收到扫码机TCP消息: " + data);
                     // 解析条码数据并处理
@@ -376,8 +376,8 @@ public class AutoProcessService {
         // 使用NetworkService中已有的方法检查扫描枪连接状态
         try {
             // 检查SCANNER服务是否正在运行且有连接的客户端
-            return networkService.isServiceRunning(ServiceType.SCANNER) && 
-                   networkService.getConnectedClientCount(ServiceType.SCANNER) > 0;
+            return networkService.isServiceRunning(TcpServiceEnum.SCANNER) && 
+                   networkService.getConnectedClientCount(TcpServiceEnum.SCANNER) > 0;
         } catch (Exception e) {
             return false;
         }

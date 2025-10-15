@@ -1,6 +1,7 @@
 F:\codebuddy\iot_ap\src\main\java\com\iot\plc\model\Task.java
 F:\codebuddy\iot_ap\src\main\java\com\iot\plc\model\BarcodeData.java
 F:\codebuddy\iot_ap\src\main\java\com\iot\plc\scheduler\LogCleanupJob.java
+F:\codebuddy\iot_ap\src\main\java\com\iot\plc\enumx\TcpServiceEnum.java
 F:\codebuddy\iot_ap\src\main\java\com\iot\plc\service\ServiceInstance.java
 F:\codebuddy\iot_ap\src\main\java\com\iot\plc\service\SerialPortService.java
 F:\codebuddy\iot_ap\src\main\java\com\iot\plc\service\AutoProcessService.java
@@ -39,7 +40,6 @@ F:\codebuddy\iot_ap\src\main\java\com\iot\plc\ui\task\JavaFXTaskListPanel.java
 F:\codebuddy\iot_ap\src\main\java\com\iot\plc\logger\Logger.java
 F:\codebuddy\iot_ap\src\main\java\com\iot\plc\service\TaskListService.java
 F:\codebuddy\iot_ap\src\main\java\com\iot\plc\service\ConfigService.java
-F:\codebuddy\iot_ap\src\main\java\com\iot\plc\enumx\ServiceType.java
 F:\codebuddy\iot_ap\src\main\java\com\iot\plc\model\LogItem.java
 F:\codebuddy\iot_ap\src\main\java\com\iot\plc\ui\AutoProcessPanel.java
 F:\codebuddy\iot_ap\src\main\java\com\iot\plc\model\ProgramResult.java

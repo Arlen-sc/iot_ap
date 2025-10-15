@@ -81,13 +81,27 @@ public class AutoControlService {
         // PLC Message Handler - 检查服务是否为null
         if (plcService != null) {
             plcService.addPlcMessageListener((messageType, message) -> {
-                switch (currentState) {
-                    case SCANNING:
-                        validateProductCount(message);
-                        break;
-                    case WAITING_COMMAND:
-                        checkStartCommand(message);
-                        break;
+                try {
+                    switch (currentState) {
+                        case SCANNING:
+                            validateProductCount(message);
+                            break;
+                        case WAITING_COMMAND:
+                            checkStartCommand(message);
+                            break;
+                        case IDLE:
+                        case VALIDATING:
+                        case PROGRAMMING:
+                        case REPORTING:
+                        case ERROR:
+                            // 其他状态下记录消息但不处理
+                            logger.debug("收到PLC消息但当前状态不处理: " + currentState.name() + ", 消息: " + message);
+                            break;
+                        default:
+                            logger.warn("未知的状态: " + currentState.name() + ", 消息: " + message);
+                    }
+                } catch (Exception e) {
+                    logger.error("处理PLC消息时发生异常: " + e.getMessage(), e);
                 }
             });
         }
@@ -96,9 +110,12 @@ public class AutoControlService {
         logger.info("自动控制服务已初始化，由于缺少依赖，部分功能可能无法正常工作");
     }
     
-
-    
-    public void processBarcode(String port, String barcode) {
+    /**
+     * 处理扫描到的条码
+     * @param port 扫描端口
+     * @param barcode 扫描到的条码
+     */
+    public void processData(String port, String barcode) {
         if (currentDeviceId == null) {
             currentDeviceId = "DEV_" + System.currentTimeMillis() % 1000;
             logger.info("自动分配设备号: " + currentDeviceId);

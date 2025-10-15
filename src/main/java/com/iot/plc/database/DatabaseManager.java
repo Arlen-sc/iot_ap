@@ -494,6 +494,9 @@ public class DatabaseManager {
     public static void saveBarcodeData(String deviceId, String barcode, String portName) throws SQLException {
         LogManager.getInstance().saveBarcodeData(deviceId, barcode, portName);
     }
+    public static void saveBarcodeData(BarcodeData barcodeData) throws SQLException {
+        LogManager.getInstance().saveBarcodeData(barcodeData.getDeviceId(), barcodeData.getBarcode(), barcodeData.getPortName());
+    }
     
     public static List<BarcodeData> getAllBarcodes() throws SQLException {
         List<BarcodeData> barcodes = new ArrayList<>();

@@ -2,14 +2,14 @@ package com.iot.plc.service;
 
 import com.iot.plc.model.DataMode;
 import com.iot.plc.enumx.ProtocolType;
-import com.iot.plc.enumx.ServiceType;
+import com.iot.plc.enumx.TcpServiceEnum;
 
 /**
  * 网络服务配置类
  * 存储网络服务的配置参数
  */
 public class NetworkConfig {
-    private ServiceType serviceType;
+    private TcpServiceEnum serviceType;
     private String host;
     private int port;
     private String alias;
@@ -22,7 +22,7 @@ public class NetworkConfig {
      * @param host 主机地址
      * @param port 端口号
      */
-    public NetworkConfig(ServiceType serviceType, String host, int port) {
+    public NetworkConfig(TcpServiceEnum serviceType, String host, int port) {
         this.serviceType = serviceType;
         this.host = host;
         this.port = port;
@@ -33,14 +33,14 @@ public class NetworkConfig {
     /**
      * 获取服务类型
      */
-    public ServiceType getServiceType() {
+    public TcpServiceEnum getServiceType() {
         return serviceType;
     }
     
     /**
      * 设置服务类型
      */
-    public void setServiceType(ServiceType serviceType) {
+    public void setServiceType(TcpServiceEnum serviceType) {
         this.serviceType = serviceType;
     }
     

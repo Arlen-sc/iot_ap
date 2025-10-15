@@ -10,10 +10,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import com.iot.plc.config.NetworkConfig;
+import com.iot.plc.enumx.ProtocolType;
 import com.iot.plc.enumx.TcpServiceEnum;
 import com.iot.plc.listener.NetworkListener;
 import com.iot.plc.logger.Logger;
 import com.iot.plc.model.DataMode;
+import com.iot.plc.service.ConfigService;
 
 /**
  * 网络服务类
@@ -139,6 +141,84 @@ public class NetworkService {
     }
     
     /**
+     * 通用启动TCP服务方法
+     * @param serviceType 服务类型
+     * @param host 主机地址
+     * @param port 端口号
+     * @param protocolType 协议类型
+     * @param dataMode 数据模式
+     * @param alias 别名
+     */
+    public void startTcpService(TcpServiceEnum serviceType, String host, int port, ProtocolType protocolType, DataMode dataMode, String alias) {
+        NetworkConfig config = new NetworkConfig(serviceType, host, port);
+        config.setProtocolType(protocolType);
+        config.setDataMode(dataMode);
+        if (alias != null && !alias.isEmpty()) {
+            config.setAlias(alias);
+        }
+        startService(config);
+    }
+    
+    /**
+     * 通用启动TCP服务方法 - 从配置管理获取参数
+     * @param serviceType 服务类型
+     */
+    public void startTcpService(TcpServiceEnum serviceType) {
+        try {
+            // 从配置管理中获取参数
+            String configHost = ConfigService.getInstance().getConfigValueByKey(serviceType.getCode() + ".tcp.host");
+            // 端口号默认值为8888
+            String configPort = ConfigService.getInstance().getConfigValueByKey(serviceType.getCode() + ".tcp.port");
+            // 协议类型默认值为TCP_SERVER
+            String configProtocol = ConfigService.getInstance().getConfigValueByKey(serviceType.getCode() + ".tcp.protocol");
+            // 数据模式默认值为ASCII
+            String configDataMode = ConfigService.getInstance().getConfigValueByKey(serviceType.getCode() + ".tcp.dataMode");
+            // 别名默认值为空字符串
+            String configAlias = ConfigService.getInstance().getConfigValueByKey(serviceType.getCode() + ".tcp.alias");
+            //如果host=0.0.0.0,就不需要启动服务
+            if (configHost.equals("0.0.0.0")) {
+                logger.info("主机地址为0.0.0.0，不启动服务");
+                return;
+            }
+            // 处理协议类型转换，支持中文配置值
+            ProtocolType protocolType = ProtocolType.TCP_SERVER; // 默认值
+            if (configProtocol != null) {
+                // 支持中文配置值映射
+                if (configProtocol.equals("TCP服务端")) {
+                    protocolType = ProtocolType.TCP_SERVER;
+                } else if (configProtocol.equals("TCP客户端")) {
+                    protocolType = ProtocolType.TCP_CLIENT;
+                } else if (configProtocol.equals("UDP")) {
+                    protocolType = ProtocolType.UDP;
+                } else {
+                    // 尝试直接转换（用于英文枚举值）
+                    try {
+                        protocolType = ProtocolType.valueOf(configProtocol);
+                    } catch (IllegalArgumentException e) {
+                        logger.warn("未知的协议类型配置: " + configProtocol + ", 使用默认值: TCP_SERVER");
+                    }
+                }
+            }
+            
+            // 处理数据模式转换
+            DataMode dataMode = DataMode.ASCII; // 默认值
+            if (configDataMode != null) {
+                try {
+                    dataMode = DataMode.valueOf(configDataMode);
+                } catch (IllegalArgumentException e) {
+                    logger.warn("未知的数据模式配置: " + configDataMode + ", 使用默认值: ASCII");
+                }
+            }
+            
+            // 调用现有的startTcpService方法
+            startTcpService(serviceType, configHost, Integer.parseInt(configPort), protocolType, dataMode, configAlias);
+        } catch (Exception e) {
+            logger.error("启动" + serviceType.getDescription() + "服务失败: " + e.getMessage());
+            throw e; // 抛出异常以便上层处理
+        }
+    }
+    
+    /**
      * 启动网络服务
      */
     public synchronized void startService(NetworkConfig config) {
@@ -227,31 +307,34 @@ public class NetworkService {
         NetworkConfig config = serviceInstance.getConfig();
         executorService.submit(() -> {
             try {
-                String logMsg = "[TCP服务端] 开始创建ServerSocket，端口: " + config.getPort();
+                // 获取别名信息
+                String alias = config.getAlias() != null && !config.getAlias().isEmpty() ? "[别名: " + config.getAlias() + "] " : "";
+                
+                String logMsg = "[TCP服务端] " + alias + "开始创建ServerSocket，端口: " + config.getPort();
                 logger.info(logMsg);
                 notifyLogReceived(logMsg);
                 
                 ServerSocket serverSocket = new ServerSocket(config.getPort());
                 serviceInstance.setTcpServerSocket(serverSocket);
                 
-                logMsg = "[TCP服务端] TCP服务端启动成功，端口: " + config.getPort();
+                logMsg = "[TCP服务端] " + alias + "TCP服务端启动成功，端口: " + config.getPort();
                 logger.info(logMsg);
                 notifyLogReceived(logMsg);
                 
                 // 服务成功启动后立即通知状态为已连接
-                logMsg = "[TCP服务端] 通知连接状态为已连接";
+                logMsg = "[TCP服务端] " + alias + "通知连接状态为已连接";
                 logger.info(logMsg);
                 notifyLogReceived(logMsg);
                 notifyConnectionStatus(true, config.getServiceType());
                 
                 while (serviceInstance.isRunning()) {
                     try {
-                        logMsg = "[TCP服务端] 等待客户端连接...";
+                        logMsg = "[TCP服务端] " + alias + "等待客户端连接...";
                         logger.info(logMsg);
                         notifyLogReceived(logMsg); // 将等待客户端连接的日志传递给UI
                         
                         Socket clientSocket = serverSocket.accept();
-                        logMsg = "[TCP服务端] 客户端已连接: " + clientSocket.getInetAddress().getHostAddress();
+                        logMsg = "[TCP服务端] " + alias + "客户端已连接: " + clientSocket.getInetAddress().getHostAddress();
                         logger.info(logMsg);
                         notifyLogReceived(logMsg);
                         
@@ -259,7 +342,7 @@ public class NetworkService {
                         executorService.submit(() -> handleTcpConnection(clientSocket, serviceInstance));
                     } catch (IOException e) {
                         if (serviceInstance.isRunning()) { // 只有在服务运行时才记录错误
-                            logMsg = "[TCP服务端] 接受TCP连接失败: " + e.getMessage();
+                            logMsg = "[TCP服务端] " + alias + "接受TCP连接失败: " + e.getMessage();
                             logger.warn(logMsg);
                             notifyLogReceived(logMsg);
                             // 注意：不要在这里设置为未连接，因为服务器仍然在运行中

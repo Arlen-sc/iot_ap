@@ -2,8 +2,8 @@ com\iot\plc\ui\logs\LogsManagementPanel.class
 com\iot\plc\service\SerialPortService$DataListener.class
 com\iot\plc\ui\task\JavaFXTaskListPanel$1.class
 com\iot\plc\ui\AutoProcessPanel$1.class
-com\iot\plc\ui\config\NetworkConfigPanel$ConfigType.class
 com\iot\plc\service\SerialPortService.class
+com\iot\plc\enumx\TcpServiceEnum.class
 com\iot\plc\service\TestProtocolType.class
 com\iot\plc\service\UpperComputerService$UpperComputerHandler.class
 com\iot\plc\ui\config\JavaFXConfigPanel$1.class
@@ -12,6 +12,7 @@ com\iot\plc\util\NetworkTestClient.class
 com\iot\plc\service\NetworkService.class
 com\iot\plc\ui\AutoProcessPanel.class
 com\iot\plc\model\BarcodeData.class
+com\iot\plc\config\NetworkConfig$1.class
 com\iot\plc\service\LogService$LogListener.class
 com\iot\plc\model\ValidationResult.class
 com\iot\plc\service\EmsService.class
@@ -38,7 +39,6 @@ com\iot\plc\ui\config\JavaFXConfigPanel$2.class
 com\iot\plc\service\InitConfigService.class
 com\iot\plc\scheduler\LogCleanupJob.class
 com\iot\plc\service\AutoControlService$State.class
-com\iot\plc\enumx\ServiceType.class
 com\iot\plc\ui\task\TaskListPanel.class
 com\iot\plc\model\TaskDetail.class
 com\iot\plc\ui\task\TaskListPanel$1.class

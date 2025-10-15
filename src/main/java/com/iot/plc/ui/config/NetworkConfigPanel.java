@@ -55,10 +55,29 @@ public class NetworkConfigPanel extends JavaFXBasePanel {
 
         // 创建配置类型选择
         HBox configTypeBox = new HBox(10);
-        Label configTypeLabel = new Label("配置类型：");
+        Label configTypeLabel = new Label("TCP服务：");
         ComboBox<TcpServiceEnum> configTypeComboBox = new ComboBox<>();
         configTypeComboBox.getItems().addAll(TcpServiceEnum.values());
         configTypeComboBox.setValue(selectedConfigType);
+        
+        // 设置下拉框显示description
+        configTypeComboBox.setCellFactory(lv -> new ListCell<TcpServiceEnum>() {
+            @Override
+            protected void updateItem(TcpServiceEnum item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty ? "" : item.getDescription());
+            }
+        });
+        
+        // 设置选中项显示description
+        configTypeComboBox.setButtonCell(new ListCell<TcpServiceEnum>() {
+            @Override
+            protected void updateItem(TcpServiceEnum item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty ? "" : item.getDescription());
+            }
+        });
+        
         configTypeComboBox.setOnAction(e -> {
             selectedConfigType = configTypeComboBox.getValue();
             // 切换配置类型时，重新加载数据
@@ -163,7 +182,7 @@ public class NetworkConfigPanel extends JavaFXBasePanel {
             return;
         }
 
-        String prefix = selectedConfigType.name() + ".tcp";
+        String prefix = selectedConfigType.getCode() + ".tcp";
         String protocol = protocolComboBox.getValue();
         String host = hostTextField.getText().trim();
         String port = portTextField.getText().trim();

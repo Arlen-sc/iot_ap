@@ -104,25 +104,25 @@ public class InitConfigService {
         // 日志配置
         addDefaultConfig(configService, "log.level", "INFO", "日志级别", "string", false);
         addDefaultConfig(configService, "log.max.files", "10", "最大日志文件数量", "string", false);
-        
+        //plc.tcp.ok.command
+        addDefaultConfig(configService, "plc.tcp.ok.command", "ok", "PLC-OK指令", "string", false);
+        //plc.tcp.error.command
+        addDefaultConfig(configService, "plc.tcp.error.command", "error", "PLC-ERROR指令", "string", false);
+        //burner.qty.query.command
+        addDefaultConfig(configService, "burner.qty.query.command", "00 05 00 00 00 06 01 04 15 7D 00 01", "plc条码数查询指令", "string", false);
+        //burner.qty.query.response
+        addDefaultConfig(configService, "burner.qty.query.response", "00 05 00 00 00 05 01 04 02 00", "plc条码数查询响应指令", "string", false);
+        //device.id
+        addDefaultConfig(configService, "device.id", "PLC_DEVICE_001", "设备ID", "string", false);
         // 网络配置面板相关配置项
         // 使用TcpServiceEnum遍历添加，提高扩展性
         for (TcpServiceEnum serviceEnum : TcpServiceEnum.values()) {
-            String code = serviceEnum.getCode().toUpperCase();
+            String code = serviceEnum.getCode().toLowerCase();
             String desc = serviceEnum.getDescription();
             
             // 默认配置
             String defaultHost = "0.0.0.0";
             String defaultPort = "8888";
-            
-            // 为不同服务类型设置特定的默认值
-            if (serviceEnum == TcpServiceEnum.SCANNER) {
-                defaultHost = "127.0.0.1";
-                defaultPort = "8889";
-            } else if (serviceEnum == TcpServiceEnum.PLC) {
-                defaultPort = "8083";
-            }
-            
             // 添加配置项
             addDefaultConfig(configService, code + ".tcp.protocol", "TCP服务端", desc + "协议类型", "string", false);
             addDefaultConfig(configService, code + ".tcp.host", defaultHost, desc + "主机地址", "string", false);

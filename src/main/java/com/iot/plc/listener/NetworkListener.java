@@ -5,19 +5,19 @@ import com.iot.plc.enumx.*;
 // 网络监听器接口
 public interface NetworkListener {
 // 新版方法，支持服务类型区分
-        default void onDataReceived(String data, ServiceType serviceType) {
+        default void onDataReceived(String data, TcpServiceEnum serviceType) {
             // 默认实现为空，避免调用已移除的旧版方法
         }
         
-        default void onDataReceived(byte[] data, ServiceType serviceType) {
+        default void onDataReceived(byte[] data, TcpServiceEnum serviceType) {
             // 默认实现为空，避免调用已移除的旧版方法
         }
         
-        default void onConnectionStatusChanged(boolean connected, ServiceType serviceType) {
+        default void onConnectionStatusChanged(boolean connected, TcpServiceEnum serviceType) {
             // 默认实现为空，避免调用已移除的旧版方法
         }
         
-        default void onConnectionCountChanged(int count, ServiceType serviceType) {
+        default void onConnectionCountChanged(int count, TcpServiceEnum serviceType) {
             // 默认实现为空，避免调用已移除的旧版方法
         }
         

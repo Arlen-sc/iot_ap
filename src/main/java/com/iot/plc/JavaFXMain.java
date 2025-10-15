@@ -55,7 +55,7 @@ public class JavaFXMain extends Application {
 
         // 设置场景和舞台
         root.getChildren().add(tabbedPane);
-        Scene scene = new Scene(root, 1200, 800);
+        Scene scene = new Scene(root, 1200, 1200);
         primaryStage.setTitle("PLC任务管理系统");
         primaryStage.setScene(scene);
         primaryStage.show();
