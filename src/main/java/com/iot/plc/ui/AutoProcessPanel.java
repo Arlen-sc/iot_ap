@@ -1646,6 +1646,46 @@ public class AutoProcessPanel extends BorderPane {
         
     }
     /**
+     * 保存烧录结果到数据库
+     * @param barcodes
+     * @throws Exception
+     */
+    private void saveProgramResult(String barcodes) throws Exception {
+        // 清理可能的无效字符
+        barcodes = barcodes.trim();
+        // 解析JSON字符串为条码列表
+        JSONArray jsonArray = JSONArray.parseArray(barcodes);
+        for (int i = 0; i < jsonArray.size(); i++) {
+            JSONObject jsonObject = jsonArray.getJSONObject(i);
+            String site = jsonObject.getString("site");
+            String code = jsonObject.getString("code");
+            int result = jsonObject.getIntValue("result");
+            log("[烧录机] 站点: " + site + ", 条码: " + code + ", 结果: " + result);
+            //把数据保存到当前页面烧录结果中，并保存到数据库
+            boolean success = result == 1; // 假设1表示成功，0表示失败
+            String message = success ? "烧录成功" : "烧录失败";
+            LocalDateTime now = LocalDateTime.now();
+            
+            // 保存到当前页面烧录结果中
+            BurnResultData burnResultData = new BurnResultData(code, success, message);
+            burnResultDataList.add(burnResultData);
+            log("[数据操作] 添加烧录结果到界面显示: 条码=" + code + ", 状态=" + (success ? "成功" : "失败"));
+            
+            // 创建ProgramResult对象并保存到数据库
+            try {
+                ProgramResult programResult = new ProgramResult(code, String.valueOf(result), deviceId);
+                programResult.setTime(now);
+                programResult.setRem(message);
+                
+                DatabaseManager.saveProgramResult(programResult);
+                log("[数据库操作] 成功保存烧录结果到数据库: 条码=" + code);
+            } catch (Exception e) {
+                log("[数据库错误] 保存烧录结果到数据库失败: " + e.getMessage());
+                throw new RuntimeException("保存烧录结果到数据库失败", e);
+            }
+        }
+    }
+    /**
      * 处理烧录机信息数据
      * @param value
      */
@@ -1660,64 +1700,20 @@ public class AutoProcessPanel extends BorderPane {
             // 提取条码数量,把value中的jsonPrefix替换为空字符串
             String barcodes=value.toUpperCase().replaceAll(jsonPrefix.toUpperCase(), "").trim();
             log("[烧录机] 提取后的字符串: " + barcodes);
-            
-            // 检查字符串是否已经是JSON格式（以[开头，以]结尾）
-            boolean isProbablyJson = barcodes.trim().startsWith("[") && barcodes.trim().endsWith("]");
-            
-            if (!isProbablyJson) {
-                try {
-                    // 如果不是JSON格式，尝试进行hexToString转换
-                    log("[烧录机] 尝试进行十六进制转换");
-                    String converted = HexUtils.hexToString(barcodes, "UTF-8");
-                    log("[烧录机] 转换后的字符串: " + converted);
-                    barcodes = converted;
-                } catch (Exception e) {
-                    log("[烧录机] 十六进制转换失败，使用原始字符串: " + e.getMessage());
-                }
-            } else {
-                log("[烧录机] 字符串似乎已经是JSON格式，跳过转换");
-            }
             try {
-                // 清理可能的无效字符
-                barcodes = barcodes.trim();
-                // 解析JSON字符串为条码列表
-                JSONArray jsonArray = JSONArray.parseArray(barcodes);
-                for (int i = 0; i < jsonArray.size(); i++) {
-                    JSONObject jsonObject = jsonArray.getJSONObject(i);
-                    String site = jsonObject.getString("site");
-                    String code = jsonObject.getString("code");
-                    int result = jsonObject.getIntValue("result");
-                    log("[烧录机] 站点: " + site + ", 条码: " + code + ", 结果: " + result);
-                    //把数据保存到当前页面烧录结果中，并保存到数据库
-                    boolean success = result == 1; // 假设1表示成功，0表示失败
-                    String message = success ? "烧录成功" : "烧录失败";
-                    LocalDateTime now = LocalDateTime.now();
-                    
-                    // 保存到当前页面烧录结果中
-                    BurnResultData burnResultData = new BurnResultData(code, success, message);
-                    burnResultDataList.add(burnResultData);
-                    log("[数据操作] 添加烧录结果到界面显示: 条码=" + code + ", 状态=" + (success ? "成功" : "失败"));
-                    
-                    // 创建ProgramResult对象并保存到数据库
-                    try {
-                        ProgramResult programResult = new ProgramResult(code, success ? "成功" : "失败", deviceId);
-                        programResult.setTime(now);
-                        programResult.setRem(message);
-                        
-                        DatabaseManager.saveProgramResult(programResult);
-                        log("[数据库操作] 成功保存烧录结果到数据库: 条码=" + code);
-                    } catch (Exception e) {
-                        log("[数据库错误] 保存烧录结果到数据库失败: " + e.getMessage());
-                    }
-                }
+                //清空当前页面烧录结果
+                burnResultDataList.clear();
+               saveProgramResult(barcodes);
+               //给PLC发送指令：完成：plc.tcp.complete.command
+                String completeCommand = configService.getConfigValueByKey("plc.tcp.complete.command");
+                log("[PLC]完成指令："+completeCommand);
+                networkService.sendData(completeCommand, TcpServiceEnum.PLC);
+                //给burner发送指令：结束：burner.tcp.complete.command
+                String endCommand = configService.getConfigValueByKey("burner.tcp.complete.command");
+                log("[烧录机]结束指令："+endCommand);
+                networkService.sendData(endCommand, TcpServiceEnum.BURNER);
             }catch (Exception e) {
                 log("[烧录机] 处理条码数据时出错: " + e.getMessage());
-                log("[烧录机] 错误详情 - 异常类型: " + e.getClass().getName());
-                log("[烧录机] 错误详情 - 尝试解析的字符串: " + barcodes);
-                log("[烧录机] 错误详情 - 字符串长度: " + barcodes.length());
-                log("[烧录机] 错误详情 - 首字符: " + (barcodes.isEmpty() ? "空" : (int)barcodes.charAt(0)) + " (" + (barcodes.isEmpty() ? "空" : barcodes.charAt(0)) + ")");
-                log("[烧录机] 错误详情 - 尾字符: " + (barcodes.isEmpty() ? "空" : (int)barcodes.charAt(barcodes.length()-1)) + " (" + (barcodes.isEmpty() ? "空" : barcodes.charAt(barcodes.length()-1)) + ")");
-                e.printStackTrace();
             }
         }
     }

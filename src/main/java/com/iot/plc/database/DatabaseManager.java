@@ -83,7 +83,7 @@ public class DatabaseManager {
             String createProgramResultTable = "CREATE TABLE IF NOT EXISTS program_result (" +
                     "id INTEGER PRIMARY KEY AUTOINCREMENT," +
                     "batch_id VARCHAR(50)," +
-                    "device_id VARCHAR(20) NOT NULL," +
+                    "device_id VARCHAR(20) ," +
                     "barcode VARCHAR(50) NOT NULL," +
                     "result BOOLEAN NOT NULL," +
                     "error_message TEXT," +
