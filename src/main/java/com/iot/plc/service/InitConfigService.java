@@ -105,9 +105,11 @@ public class InitConfigService {
         addDefaultConfig(configService, "log.level", "INFO", "日志级别", "string", false);
         addDefaultConfig(configService, "log.max.files", "10", "最大日志文件数量", "string", false);
         //plc.tcp.ok.command
-        addDefaultConfig(configService, "plc.tcp.ok.command", "ok", "PLC-OK指令", "string", false);
+        addDefaultConfig(configService, "plc.tcp.ok.command", "00 05 00 00 00 06 01 06 15 7E 00 01", "PLC-OK指令", "string", false);
         //plc.tcp.error.command
-        addDefaultConfig(configService, "plc.tcp.error.command", "error", "PLC-ERROR指令", "string", false);
+        addDefaultConfig(configService, "plc.tcp.error.command", "00 05 00 00 00 06 01 06 15 7E 00 02", "PLC-ERROR指令", "string", false);
+        //plc.tcp完成指令
+        addDefaultConfig(configService, "plc.tcp.complete.command", "00 05 00 00 00 06 01 06 15 7E 00 03", "PLC-完成指令", "string", false);
         //burner.qty.query.command
         addDefaultConfig(configService, "burner.qty.query.command", "00 05 00 00 00 06 01 04 15 7D 00 01", "plc条码数查询指令", "string", false);
         //burner.qty.query.response

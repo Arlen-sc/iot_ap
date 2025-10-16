@@ -1723,7 +1723,6 @@ public class AutoProcessPanel extends BorderPane {
         int burnerBarcodeCount = Integer.parseInt(expectedBarcodeCount.get());
         log("[扫码机] 烧录机条码数: " + burnerBarcodeCount);
         if (burnerBarcodeCount >= 0) {
-            log("[扫码机] 烧录机条码数: " + burnerBarcodeCount);
             if (burnerBarcodeCount > currentBarcodes.size()) {
                 log("[扫码机] 条码数量不一致，继续处理");
             } else if (burnerBarcodeCount == currentBarcodes.size()) {
@@ -1734,7 +1733,7 @@ public class AutoProcessPanel extends BorderPane {
                 // 发送PLC-OK指令
                 NetworkService networkService = NetworkService.getInstance();
                 networkService.sendData(plcOkCommand, TcpServiceEnum.PLC);
-                log("[操作] 发送指令到PLC: " + plcOkCommand);
+                log("[操作] 成功发送OK指令到PLC: " + plcOkCommand);
                 sendBarcodeToBurner();
                 // 重置当前条码列表
                 // currentBarcodes.clear();
@@ -1750,7 +1749,7 @@ public class AutoProcessPanel extends BorderPane {
                 // 发送PLC-ERROR指令
                 NetworkService networkService = NetworkService.getInstance();
                 networkService.sendData(plcErrorCommand, TcpServiceEnum.PLC);
-                log("[操作] 发送指令到PLC: " + plcErrorCommand);
+                log("[操作] 发送NG指令到PLC: " + plcErrorCommand);
             }
         }
         
@@ -1759,7 +1758,7 @@ public class AutoProcessPanel extends BorderPane {
      * 发送当前条码列表到烧录机
      */
     private void  sendBarcodeToBurner(){
-        log("[操作] 发送条码列表到烧录机: " );
+        log("[流程] 发送条码列表到烧录机: " );
         String barcodesStr = getBarcodesStr();
         // 通过NetworkService发送指令到烧录机
         NetworkService networkService = NetworkService.getInstance();
