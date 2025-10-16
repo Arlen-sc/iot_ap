@@ -12,7 +12,7 @@ public class LogManager {
     private static final String LOG_RETENTION_PERIOD_KEY = "log_retention_period";
     private static volatile LogManager instance;
     private final ConfigService configService;
-    private boolean shouldLog = false; // 默认关闭日志
+    private boolean shouldLog = true; // 默认开启日志
 
     private LogManager() {
         configService = ConfigService.getInstance();
@@ -40,19 +40,19 @@ public class LogManager {
             if (retentionDays != null) {
                 int days = Integer.parseInt(retentionDays);
                 Logger.getInstance().debug("日志保留天数配置值: " + days);
-                // 根据配置决定是否记录日志，0表示不记录
-                shouldLog = (days > 0);
-                Logger.getInstance().info("日志记录状态设置为: " + (shouldLog ? "开启" : "关闭"));
+                // 0表示永不清除日志，无论设置为何值都应该记录日志
+                shouldLog = true;
+                Logger.getInstance().info("日志记录状态设置为: 开启 (保留天数: " + days + ")");
             } else {
                 // 如果配置不存在，设置默认值并保存到数据库
-                String defaultDays = "0"; // 默认不记录日志
-                shouldLog = false;
-                configService.saveConfigItem(LOG_RETENTION_PERIOD_KEY, defaultDays, "日志保留天数，0表示不记录日志");
-                Logger.getInstance().info("日志记录配置不存在，已创建默认配置: 不记录日志");
+                String defaultDays = "0"; // 默认永不清除日志
+                shouldLog = true;
+                configService.saveConfigItem(LOG_RETENTION_PERIOD_KEY, defaultDays, "日志保留天数，0表示永不清除日志");
+                Logger.getInstance().info("日志记录配置不存在，已创建默认配置: 永不清除日志");
             }
         } catch (Exception e) {
-            // 配置读取失败时，默认关闭日志
-            shouldLog = false;
+            // 配置读取失败时，默认开启日志且永不清除
+            shouldLog = true;
             Logger.getInstance().error("读取日志配置失败: " + e.getMessage(), e);
         }
     }
