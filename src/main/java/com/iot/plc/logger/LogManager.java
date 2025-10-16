@@ -12,7 +12,7 @@ public class LogManager {
     private static final String LOG_RETENTION_PERIOD_KEY = "log_retention_period";
     private static volatile LogManager instance;
     private final ConfigService configService;
-    private boolean shouldLog = true; // 默认记录日志
+    private boolean shouldLog = false; // 默认关闭日志
 
     private LogManager() {
         configService = ConfigService.getInstance();
@@ -40,19 +40,19 @@ public class LogManager {
             if (retentionDays != null) {
                 int days = Integer.parseInt(retentionDays);
                 Logger.getInstance().debug("日志保留天数配置值: " + days);
-                // 强制启用日志记录，忽略配置值
-                shouldLog = true;
-                Logger.getInstance().info("日志记录已强制启用，忽略配置值: " + retentionDays);
+                // 根据配置决定是否记录日志，0表示不记录
+                shouldLog = (days > 0);
+                Logger.getInstance().info("日志记录状态设置为: " + (shouldLog ? "开启" : "关闭"));
             } else {
                 // 如果配置不存在，设置默认值并保存到数据库
-                String defaultDays = "7"; // 默认保留7天日志
-                shouldLog = true;
+                String defaultDays = "0"; // 默认不记录日志
+                shouldLog = false;
                 configService.saveConfigItem(LOG_RETENTION_PERIOD_KEY, defaultDays, "日志保留天数，0表示不记录日志");
-                Logger.getInstance().info("日志记录配置不存在，已创建默认配置: 保留7天");
+                Logger.getInstance().info("日志记录配置不存在，已创建默认配置: 不记录日志");
             }
         } catch (Exception e) {
-            // 配置读取失败时，默认记录日志
-            shouldLog = true;
+            // 配置读取失败时，默认关闭日志
+            shouldLog = false;
             Logger.getInstance().error("读取日志配置失败: " + e.getMessage(), e);
         }
     }
@@ -112,11 +112,10 @@ public class LogManager {
         Logger.getInstance().debug("尝试保存烧录结果: deviceId=" + deviceId + ", barcode=" + barcode + ", result=" + result + ", remark=" + remark + ", programTime=" + programTime);
         Logger.getInstance().debug("shouldLog标志值: " + shouldLog);
         
-        // 强制保存，忽略shouldLog标志检查
-        // if (!shouldLog) {
-        //     Logger.getInstance().debug("日志记录已禁用，跳过保存烧录结果");
-        //     return;
-        // }
+        if (!shouldLog) {
+            Logger.getInstance().debug("日志记录已禁用，跳过保存烧录结果");
+            return;
+        }
         
         // 修改SQL语句，移除batch_id字段，将remark改为error_message以匹配表结构
         String sql = "INSERT INTO program_result (device_id, barcode, result, error_message, program_time) VALUES (?, ?, ?, ?, ?)";
