@@ -533,22 +533,54 @@ public class DatabaseManager {
      * @param result 烧录结果
      */
     public static void saveProgramResult(ProgramResult result) {
+        Logger.getInstance().debug("开始处理ProgramResult对象保存");
+        if (result == null) {
+            Logger.getInstance().error("传入的ProgramResult对象为空");
+            return;
+        }
+        
         try {
-            // 直接调用LogManager的保存方法，传入必要的参数
+            Logger.getInstance().debug("ProgramResult对象内容: " + result.toString());
+            
             // 将String类型的result转换为boolean类型
             boolean success = "success".equalsIgnoreCase(result.getResult()) || 
                              "true".equalsIgnoreCase(result.getResult()) || 
                              "1".equals(result.getResult());
             
+            Logger.getInstance().debug("转换后的结果值: " + success);
+            Logger.getInstance().debug("准备调用LogManager保存数据");
+            
+            // 直接调用LogManager的保存方法，传入必要的参数
             LogManager.getInstance().saveProgramResult(
-                result.getDeviceId(),
-                result.getCode(),
+                result.getDeviceId() != null ? result.getDeviceId() : "unknown_device",
+                result.getCode() != null ? result.getCode() : "",
                 success,
-                result.getRem(),
+                result.getRem() != null ? result.getRem() : "",
                 result.getTime()
             );
+            
+            Logger.getInstance().debug("LogManager.saveProgramResult调用完成");
         } catch (Exception e) {
-            Logger.getInstance().error("保存烧录结果失败: " + e.getMessage());
+            Logger.getInstance().error("保存烧录结果失败: " + e.getMessage(), e);
+            // 强制直接保存到数据库，绕过LogManager的shouldLog检查
+            try (Connection conn = getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement("INSERT INTO program_result (device_id, barcode, result, error_message, program_time) VALUES (?, ?, ?, ?, ?)")) {
+                
+                boolean success = "success".equalsIgnoreCase(result.getResult()) || 
+                                 "true".equalsIgnoreCase(result.getResult()) || 
+                                 "1".equals(result.getResult());
+                
+                pstmt.setString(1, result.getDeviceId() != null ? result.getDeviceId() : "unknown_device");
+                pstmt.setString(2, result.getCode() != null ? result.getCode() : "");
+                pstmt.setBoolean(3, success);
+                pstmt.setString(4, result.getRem() != null ? result.getRem() : "");
+                pstmt.setTimestamp(5, Timestamp.valueOf(result.getTime()));
+                
+                pstmt.executeUpdate();
+                Logger.getInstance().info("通过备用方案成功保存烧录结果到数据库");
+            } catch (SQLException ex) {
+                Logger.getInstance().error("备用保存方案也失败: " + ex.getMessage(), ex);
+            }
         }
     }
     
