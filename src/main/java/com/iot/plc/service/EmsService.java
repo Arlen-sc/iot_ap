@@ -12,7 +12,7 @@ import java.util.concurrent.Executors;
 
 import com.iot.plc.logger.Logger;
 
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSONObject;
 
 /**
  * EMS服务类

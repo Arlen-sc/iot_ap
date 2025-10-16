@@ -3,6 +3,7 @@ package com.iot.plc.service;
 import java.io.IOException;
 import java.net.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,7 +16,7 @@ import com.iot.plc.enumx.TcpServiceEnum;
 import com.iot.plc.listener.NetworkListener;
 import com.iot.plc.logger.Logger;
 import com.iot.plc.model.DataMode;
-import com.iot.plc.service.ConfigService;
+import com.iot.plc.util.HexUtils;
 
 /**
  * 网络服务类
@@ -117,29 +118,7 @@ public class NetworkService {
             listeners.add(listener);
         }
     }
-    
-    /**
-     * 启动扫码机网络服务
-     */
-    public void startScannerService(String protocolType, String host, int port, DataMode dataMode) {
-        NetworkConfig config = new NetworkConfig(TcpServiceEnum.SCANNER, host, port);
-        // 暂时注释掉ProtocolType设置，等待ProtocolType类问题解决
-        // config.setProtocolType(ProtocolType.valueOf(protocolType));
-        config.setDataMode(dataMode);
-        startService(config);
-    }
-    
-    /**
-     * 启动烧录机网络服务
-     */
-    public void startBurnerService(String protocolType, String host, int port, DataMode dataMode) {
-        NetworkConfig config = new NetworkConfig(TcpServiceEnum.BURNER, host, port);
-        // 暂时注释掉ProtocolType设置，等待ProtocolType类问题解决
-        // config.setProtocolType(ProtocolType.valueOf(protocolType));
-        config.setDataMode(dataMode);
-        startService(config);
-    }
-    
+
     /**
      * 通用启动TCP服务方法
      * @param serviceType 服务类型
@@ -172,7 +151,7 @@ public class NetworkService {
             // 协议类型默认值为TCP_SERVER
             String configProtocol = ConfigService.getInstance().getConfigValueByKey(serviceType.getCode() + ".tcp.protocol");
             // 数据模式默认值为ASCII
-            String configDataMode = ConfigService.getInstance().getConfigValueByKey(serviceType.getCode() + ".tcp.dataMode");
+            String configDataMode = ConfigService.getInstance().getConfigValueByKey(serviceType.getCode() + ".tcp.datamodel");
             // 别名默认值为空字符串
             String configAlias = ConfigService.getInstance().getConfigValueByKey(serviceType.getCode() + ".tcp.alias");
             //如果host=0.0.0.0,就不需要启动服务
@@ -291,13 +270,6 @@ public class NetworkService {
         for (TcpServiceEnum serviceType : TcpServiceEnum.values()) {
             stopService(serviceType);
         }
-    }
-    
-    /**
-     * 停止网络服务（旧版方法，为了兼容）
-     */
-    public synchronized void stopService() {
-        stopAllServices();
     }
     
     /**
@@ -454,22 +426,12 @@ public class NetworkService {
             int bytesRead;
             
             while (serviceInstance.isRunning() && (bytesRead = socket.getInputStream().read(buffer)) != -1) {
-                String receivedData = processReceivedData(buffer, bytesRead, config);
+                //把当前buffer有效数值直接回传
+                byte[] copyBuffer = Arrays.copyOf(buffer, bytesRead);
+                notifyDataReceived(copyBuffer, config.getServiceType());
+                String receivedData = processReceivedData(copyBuffer, bytesRead, config);
+                logger.info("收到TCP数据: " + receivedData);
                 notifyDataReceived(receivedData, config.getServiceType());
-                String aliasInfo = config.getAlias() != null && !config.getAlias().isEmpty() ? "[别名: " + config.getAlias() + "] " : "";
-                
-                // 根据数据模式记录相应格式的日志
-                if (config.getDataMode() == DataMode.HEX) {
-                    // HEX模式：记录带空格的十六进制字符串，并添加原始无空格版本便于调试
-                    String rawHexData = bytesToHex(buffer, bytesRead);
-                    logger.info("收到TCP数据(HEX): " + aliasInfo + receivedData);
-                    logger.debug("收到TCP原始HEX数据(无空格): " + aliasInfo + rawHexData);
-                } else {
-                    // ASCII模式：记录ASCII字符串，并同时记录十六进制形式以便调试
-                    String hexData = bytesToHex(buffer, bytesRead);
-                    logger.info("收到TCP数据(ASCII): " + aliasInfo + receivedData);
-                    logger.debug("收到TCP数据(HEX): " + aliasInfo + hexData);
-                }
             }
         } catch (IOException e) {
             if (serviceInstance.isRunning()) { // 只有在服务运行时才记录错误
@@ -500,37 +462,31 @@ public class NetworkService {
      * 处理接收到的数据
      */
     private String processReceivedData(byte[] data, int length, NetworkConfig config) {
+        String resultString="";
+        logger.debug(config.toString());
         if (config.getDataMode() == DataMode.HEX) {
-            // 返回格式化的十六进制字符串，添加空格分隔以便于阅读
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < length; i++) {
-                if (i > 0) {
-                    sb.append(" ");
-                }
-                sb.append(String.format("%02X", data[i]));
+            // logger.debug("收到原始HEX数据长度: " + length);
+            // logger.debug("原始HEX数据: " + HexUtils.bytesToHex(data, length));
+            String hexStr = HexUtils.bytesToHex(data, length);
+            // notifyDataReceived(hexStr, config.getServiceType());
+            try {
+                // logger.info("收到TCP数据(HEX): " + hexStr);
+                resultString=HexUtils.hexToString(hexStr, "UTF-8");
+            } catch (Exception e) {
+                logger.error("处理HEX数据错误: " + e.getMessage(), e);
             }
-            return sb.toString();
         } else {
             // ASCII模式：使用UTF-8编码，增加异常处理
             try {
-                return new String(data, 0, length, "UTF-8");
+                resultString = new String(data, 0, length, "UTF-8");
+                logger.debug("格式化接收数据(ASCII): " + resultString);
             } catch (Exception e) {
                 // 如果UTF-8解码失败，使用默认编码并记录警告
                 logger.warn("UTF-8解码失败，使用默认编码: " + e.getMessage());
-                return new String(data, 0, length);
+                resultString=new  String(data, 0, length);
             }
         }
-    }
-    
-    /**
-     * 将字节数组转换为十六进制字符串
-     */
-    private String bytesToHex(byte[] bytes, int length) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < length; i++) {
-            sb.append(String.format("%02X", bytes[i]));
-        }
-        return sb.toString();
+        return resultString;
     }
     
     /**
@@ -547,7 +503,7 @@ public class NetworkService {
         try {
             byte[] bytes;
             if (config.getDataMode() == DataMode.HEX) {
-                bytes = hexToBytes(data);
+                bytes = HexUtils.hexToBytes(data);
             } else {
                 bytes = data.getBytes();
             }
@@ -590,52 +546,6 @@ public class NetworkService {
     }
     
     
-    /**
-     * 将十六进制字符串转换为字节数组
-     */
-    private byte[] hexToBytes(String hex) {
-        // 检查输入是否为空
-        if (hex == null || hex.trim().isEmpty()) {
-            logger.warn("尝试转换空的十六进制字符串");
-            return new byte[0];
-        }
-        
-        // 移除所有空格和分隔符
-        hex = hex.replaceAll("\\s+", "");
-        
-        // 检查长度是否为偶数
-        if (hex.length() % 2 != 0) {
-            logger.warn("十六进制字符串长度不是偶数，自动补0: " + hex);
-            hex = "0" + hex; // 在前面补0
-        }
-        
-        int len = hex.length();
-        byte[] data = new byte[len / 2];
-        
-        // 添加错误处理
-        try {
-            for (int i = 0; i < len; i += 2) {
-                // 检查字符是否为有效十六进制字符
-                if (!isHexChar(hex.charAt(i)) || !isHexChar(hex.charAt(i + 1))) {
-                    throw new IllegalArgumentException("无效的十六进制字符: " + hex.substring(i, i + 2));
-                }
-                
-                data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
-                                     + Character.digit(hex.charAt(i + 1), 16));
-            }
-            return data;
-        } catch (Exception e) {
-            logger.error("十六进制字符串转换失败: " + hex, e);
-            throw new IllegalArgumentException("无效的十六进制字符串: " + hex, e);
-        }
-    }
-    
-    /**
-     * 检查字符是否为有效的十六进制字符
-     */
-    private boolean isHexChar(char c) {
-        return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
-    }
     
     /**
      * 通知数据接收（字符串格式）
@@ -654,6 +564,9 @@ public class NetworkService {
     /**
      * 通知数据接收（字节数组格式）
      */
+    private void notifyDataReceived(byte[] data, int length, TcpServiceEnum serviceType) {
+
+    }
     private void notifyDataReceived(byte[] data, TcpServiceEnum serviceType) {
         // 通知所有监听器（只使用新版带服务类型的方法）
         for (NetworkListener networkListener : listeners) {
@@ -744,7 +657,7 @@ public class NetworkService {
          * 清理资源
      */
     public void shutdown() {
-        stopService();
+        stopAllServices();
         executorService.shutdown();
     }
     
@@ -766,7 +679,7 @@ public class NetworkService {
         try {
             byte[] bytes;
             if (config.getDataMode() == DataMode.HEX) {
-                bytes = hexToBytes(data);
+                bytes = HexUtils.hexToBytes(data);
             } else {
                 bytes = data.getBytes();
             }
@@ -807,7 +720,7 @@ public class NetworkService {
             socket.getOutputStream().write(data);
             socket.getOutputStream().flush();
             // 确保日志中使用正确的数据模式格式
-            String logData = config.getDataMode() == DataMode.HEX ? bytesToHex(data, data.length) : 
+            String logData = config.getDataMode() == DataMode.HEX ? HexUtils.bytesToHex(data) : 
                 (data.length > 100 ? "[太长，截断显示] " + new String(data, 0, 100, "UTF-8") + "..." : new String(data, "UTF-8"));
             logger.info("已发送TCP数据到" + config.getServiceType().getDescription() + ": " + logData);
             
@@ -826,7 +739,6 @@ public class NetworkService {
         }
         return null;
     }
-    
     /**
      * UDP发送数据并等待响应
      */
@@ -846,7 +758,7 @@ public class NetworkService {
             DatagramPacket sendPacket = new DatagramPacket(data, data.length, address, config.getPort());
             udpSocket.send(sendPacket);
             // 确保日志中使用正确的数据模式格式
-            String logData = config.getDataMode() == DataMode.HEX ? bytesToHex(data, data.length) : 
+            String logData = config.getDataMode() == DataMode.HEX ? HexUtils.bytesToHex(data) : 
                 (data.length > 100 ? "[太长，截断显示] " + new String(data, 0, 100, "UTF-8") + "..." : new String(data, "UTF-8"));
             logger.info("已发送UDP数据到" + config.getServiceType().getDescription() + "地址" + config.getHost() + ":" + config.getPort() + ": " + logData);
             

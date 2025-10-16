@@ -3,7 +3,7 @@ package com.iot.plc.service;
 import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.model.*;
 import com.iot.plc.logger.Logger;
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSONObject;
 
 import java.io.IOException;
 import java.net.Socket;
@@ -49,8 +49,6 @@ public class PlcService {
     // 串口服务
     private SerialPortService serialPortService;
     
-    // 上位机服务
-    private UpperComputerService upperComputerService;
     
     // EMS服务
     private EmsService emsService;
@@ -74,7 +72,6 @@ public class PlcService {
         
         // 初始化服务
         this.serialPortService = SerialPortService.getInstance();
-        this.upperComputerService = UpperComputerService.getInstance();
         this.emsService = EmsService.getInstance();
         
         // 创建线程池
@@ -167,7 +164,6 @@ public class PlcService {
         this.plcPort = plcPort;
         
         // 初始化服务
-        this.upperComputerService.init(programDeviceHost, programDevicePort);
         this.emsService.init("http://" + emsHost + ":" + emsPort + "/api");
         
         // 初始化串口服务
@@ -179,11 +175,9 @@ public class PlcService {
         
         // 初始化服务
         this.serialPortService = SerialPortService.getInstance();
-        this.upperComputerService = UpperComputerService.getInstance();
         this.emsService = EmsService.getInstance();
         
         // 初始化上位机服务
-        this.upperComputerService.init(programDeviceHost, programDevicePort);
         
         // 初始化EMS服务
         this.emsService.init("http://" + emsHost + ":" + emsPort + "/api/results");
@@ -195,15 +189,13 @@ public class PlcService {
      */
     public boolean initializeConnections() {
         boolean plcConnected = connectToPLC();
-        String connectResult = upperComputerService.connect();
-        boolean programDeviceConnected = connectResult != null && connectResult.contains("success");
         
         // 启动监听线程
         if (plcConnected) {
             startPlcListener();
         }
         
-        return plcConnected && programDeviceConnected;
+        return plcConnected;
     }
     
     /**
@@ -252,7 +244,6 @@ public class PlcService {
         }
         
         // 关闭上位机连接
-        upperComputerService.shutdown();
         
         // 关闭EMS服务
         emsService.shutdown();
@@ -424,7 +415,6 @@ public class PlcService {
             
             // 使用上位机服务发送烧录指令
             String deviceId = "MAIN_DEVICE"; // 可以根据实际情况设置
-            upperComputerService.sendProgramCommand(deviceId, barcodes);
             return true;
         } catch (Exception e) {
             logger.error("发送烧录指令时发生错误: " + e.getMessage(), e);
@@ -625,28 +615,8 @@ public class PlcService {
     public boolean isPlcConnected() {
         return isPlcConnected.get();
     }
-    
-    /**
-     * 获取烧录上位机连接状态
-     * @return 烧录上位机连接状态
-     */
-    /**
-     * 检查上位机连接状态
-     * @return 连接状态JSON字符串
-     */
-    public String getProgramDeviceConnectionStatus() {
-        boolean isConnected = upperComputerService != null && upperComputerService.isConnected();
-        return isConnected ? 
-            "{\"status\":\"connected\"}" : 
-            "{\"status\":\"disconnected\"}";
-    }
-    
-    /**
-     * 获取EMS服务连接状态
-     * @return 连接状态字符串
-     */
-    
 
+    
     public String getEmsConnectionStatus() {
         return emsService != null ? "{\"status\":\"connected\"}" : "{\"status\":\"disconnected\"}";
     }

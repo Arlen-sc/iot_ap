@@ -114,6 +114,12 @@ public class InitConfigService {
         addDefaultConfig(configService, "burner.qty.query.command", "00 05 00 00 00 06 01 04 15 7D 00 01", "plc条码数查询指令", "string", false);
         //burner.qty.query.response
         addDefaultConfig(configService, "burner.qty.query.response", "00 05 00 00 00 05 01 04 02 00", "plc条码数查询响应指令", "string", false);
+        //burner.tcp.begin.command
+        addDefaultConfig(configService, "burner.tcp.begin.command", "1b1b1b1b1b0a1b0a52030d579253ffab40656d732f5f7374617274ff01", "plc条码数查询响应指令-Hex", "string", false);
+        //burner.tcp.end.command
+        addDefaultConfig(configService, "burner.tcp.end.command", "1b1b1b1b1b0a1b0a52030d579253ffab4065656d732f5f656e64ff01", "plc条码数查询响应指令-Hex", "string", false);
+        // burner.tcp.json.prefix
+        addDefaultConfig(configService, "burner.tcp.json.prefix", "1b1b1b1b1b0a1b0a62021741f1b8ffaa40656d732f5f74657374ff" , "plc条码json前缀", "string", false);
         //device.id
         addDefaultConfig(configService, "device.id", "PLC_DEVICE_001", "设备ID", "string", false);
         // 网络配置面板相关配置项
@@ -129,7 +135,7 @@ public class InitConfigService {
             addDefaultConfig(configService, code + ".tcp.protocol", "TCP服务端", desc + "协议类型", "string", false);
             addDefaultConfig(configService, code + ".tcp.host", defaultHost, desc + "主机地址", "string", false);
             addDefaultConfig(configService, code + ".tcp.port", defaultPort, desc + "端口号", "string", false);
-            addDefaultConfig(configService, code + ".tcp.data_format", "ASCII", desc + "数据格式", "string", false);
+            addDefaultConfig(configService, code + ".tcp.datamodel", "ASCII", desc + "数据格式", "string", false);
         }
     }
     

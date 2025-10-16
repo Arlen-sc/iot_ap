@@ -164,7 +164,7 @@ public class NetworkConfigPanel extends JavaFXBasePanel {
         portTextField.setText(port);
         
         // 加载数据格式
-        String dataFormat = ConfigService.getInstance().getConfigValueByKeyOrDefault(selectedConfigType.getCode() + ".tcp.data_format", "ASCII");
+        String dataFormat = ConfigService.getInstance().getConfigValueByKeyOrDefault(selectedConfigType.getCode() + ".tcp.datamodel", "ASCII");
         dataFormatComboBox.setValue(dataFormat);
     }
 
@@ -216,7 +216,7 @@ public class NetworkConfigPanel extends JavaFXBasePanel {
             ConfigService.getInstance().saveConfigItem(portItem);
 
             ConfigItem formatItem = new ConfigItem();
-            formatItem.setConfigKey(prefix + ".data_format");
+            formatItem.setConfigKey(prefix + ".datamodel");
             formatItem.setConfigValue(dataFormat);
             formatItem.setConfigDescription("数据格式");
             formatItem.setDataType("String");

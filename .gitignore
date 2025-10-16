@@ -28,7 +28,7 @@ QUICK_START.bat
 java/**
 target/**
 java/jdk1.8.0_281/jre/lib/fontconfig.bfc
-target/classes/com/iot/plc/logger/Logger.class
+
 
 # 忽略Trae AI工具目录
 .trae/

@@ -137,4 +137,14 @@ public class NetworkConfig {
     public void setProtocolType(ProtocolType protocolType) {
         this.protocolType = protocolType;
     }
+    public String toString() {
+        return "NetworkConfig{" +
+                "serviceType=" + serviceType +
+                ", host='" + host + '\'' +
+                ", port=" + port +
+                ", alias='" + alias + '\'' +
+                ", dataMode=" + dataMode +
+                ", protocolType=" + protocolType +
+                '}';
+    }
 }

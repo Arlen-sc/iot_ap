@@ -31,7 +31,9 @@ import java.util.UUID;
 import javafx.beans.binding.Bindings;
 import javafx.scene.layout.GridPane;
 
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONException;
+import com.alibaba.fastjson2.JSONObject;
 import com.iot.plc.config.NetworkConfig;
 import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.listener.NetworkListener;
@@ -47,6 +49,7 @@ import com.iot.plc.model.DeviceResult;
 import com.iot.plc.model.ProgramResult;
 import com.iot.plc.logger.Logger;
 import com.iot.plc.ui.config.NetworkConfigPanel;
+import com.iot.plc.util.HexUtils;
 
 /**
  * 自动处理面板
@@ -314,8 +317,8 @@ public class AutoProcessPanel extends BorderPane {
         clearBarcodesButton.setOnAction(e -> clearBarcodes());
         simulateScanButton.setOnAction(e -> simulateBarcodeScan());
         simulatePlcCountButton.setOnAction(e -> simulatePlcProductCount());
-        simulatePlcStartButton.setOnAction(e -> simulatePlcStartCommand());
-        simulateComDataButton.setOnAction(e -> showComDataInputDialog());
+        // simulatePlcStartButton.setOnAction(e -> simulatePlcStartCommand());
+        // simulateComDataButton.setOnAction(e -> showComDataInputDialog());
 
         buttonFlowPane.getChildren().addAll(
                 resetProcessButton, clearBarcodesButton,
@@ -424,6 +427,9 @@ public class AutoProcessPanel extends BorderPane {
 
         // 设置网络数据监听器
         networkService.setNetworkListener(new NetworkListener() {
+            /**
+             * 处理网络服务日志
+             */
             @Override
             public void onLogReceived(String logMessage) {
                 // 在JavaFX应用线程中更新UI日志区域
@@ -432,52 +438,60 @@ public class AutoProcessPanel extends BorderPane {
                 });
             }
 
+            /**
+             * 处理网络服务数据
+             */
             @Override
             public void onLog(String message) {
                 // 兼容扫码机日志方法，调用已有的onLogReceived
                 onLogReceived(message);
             }
 
+            // 实现字节数组版本的方法，用于处理原始hex数据
+            @Override
+            public void onDataReceived(byte[] data, TcpServiceEnum serviceType) {
+
+                // 可以在这里直接处理原始字节数据，无需转换
+                //此处需要特殊处理，只能用字符串。
+                if(serviceType == TcpServiceEnum.BURNER) {
+                    String hexString=HexUtils.bytesToHex(data);
+                    logger.info("autoProcessPanel 收到TCP数据-byte: " + hexString);
+                    // 扫码机服务，保存条码数据
+                    try {
+                        // 调用封装的条码处理方法
+                        burnerProcessBarcodeData(hexString);
+                    } catch (Exception e) {
+                        logger.error("烧录机条码数据处理失败: " + e.getMessage());
+                    }
+                }
+            }
+
             // 只实现新版方法，支持服务类型区分
             @Override
             public void onDataReceived(String data, TcpServiceEnum serviceType) {
-                // 根据服务类型获取别名信息
-                final String alias;
-                NetworkConfig config = networkService.getConfig(serviceType);
-                if (config != null && config.getAlias() != null && !config.getAlias().isEmpty()) {
-                    alias = "[" + config.getAlias() + "] ";
-                } else {
-                    alias = "";
-                }
-                
+                logger.info("autoProcessPanel 收到TCP数据-string: " + data.trim());
                 // 根据不同的服务类型处理数据
                 if (data != null && !data.trim().isEmpty()) {
                     if (serviceType == TcpServiceEnum.SCANNER) {
                         // 扫码机服务，保存条码数据
                         try {
-                            // 保存条码数据到数据库
-                            String deviceId = "SCANNER_NETWORK";
-                            String portName = "NETWORK_PORT";
-                            DatabaseManager.saveBarcodeData(deviceId, data.trim(), portName);
-                            
                             // 调用封装的条码处理方法
                             scannerProcessBarcodeData(data.trim());
                         } catch (SQLException e) {
-                            logger.error("保存扫码机条码数据失败: " + e.getMessage());
+                            logger.error("扫码机条码数据处理失败: " + e.getMessage());
                         }
                     } else if (serviceType == TcpServiceEnum.BURNER) {
-                        // 烧录机服务，处理特殊制令单数据
-                        try {
-                            log(data);
-                            // 调用封装的条码处理方法处理烧录机发送的特殊制令单
-                            burnerProcessBarcodeData(data.trim());
-                        } catch (Exception e) {
-                            logger.error("烧录机信息处理失败: " + e.getMessage());
-                        }
+                        // // 烧录机服务，处理特殊制令单数据
+                        // try {
+                        //     // 调用封装的条码处理方法处理烧录机发送的特殊制令单
+                        //     burnerProcessBarcodeData(data.trim());
+                        // } catch (Exception e) {
+                        //     logger.error("烧录机信息处理失败: " + e.getMessage());
+                        // }
                     } else if (serviceType == TcpServiceEnum.PLC) {
                         // PLC服务，记录接收到的数据
                         try {
-                            log("[PLC数据] " + data.trim());
+                            plcProcessBarcodeData(data.trim());
                         } catch (Exception e) {
                             logger.error("PLC信息处理失败: " + e.getMessage());
                         }
@@ -486,58 +500,7 @@ public class AutoProcessPanel extends BorderPane {
                 
                 // 在JavaFX应用线程中更新UI，包含别名信息
                 Platform.runLater(() -> {
-                    addNetworkData(alias + data);
-                });
-            }
-
-            @Override
-            public void onDataReceived(byte[] data, TcpServiceEnum serviceType) {
-                // 将字节数组转换为字符串
-                final String dataStr = new String(data);
-                
-                // 根据服务类型获取别名信息
-                final String alias;
-                NetworkConfig config = networkService.getConfig(serviceType);
-                if (config != null && config.getAlias() != null && !config.getAlias().isEmpty()) {
-                    alias = "[" + config.getAlias() + "] ";
-                } else {
-                    alias = "";
-                }
-                
-                // 根据不同的服务类型处理数据
-                if (dataStr != null && !dataStr.trim().isEmpty()) {
-                    if (serviceType == TcpServiceEnum.SCANNER) {
-                        // 扫码机服务，保存条码数据
-                        try {
-                            // 调用封装的条码处理方法
-                            scannerProcessBarcodeData(dataStr.trim());
-                        } catch (Exception e) {
-                            logger.error("保存扫码机条码数据失败: " + e.getMessage());
-                        }
-                    } else if (serviceType == TcpServiceEnum.PLC) {
-                        // PLC服务，记录接收到的数据
-                        try {
-                            log("[PLC数据] " + dataStr.trim());
-                            // 调用封装的条码处理方法处理PLC发送的条码数据
-                            plcProcessBarcodeData(dataStr.trim());
-                        } catch (Exception e) {
-                            logger.error("PLC信息处理失败: " + e.getMessage());
-                        }
-                    } else if (serviceType == TcpServiceEnum.BURNER) {
-                        // 烧录机服务，处理特殊制令单数据
-                        try {
-                            log(dataStr);
-                            // 调用封装的条码处理方法处理烧录机发送的特殊制令单
-                            burnerProcessBarcodeData(dataStr.trim());
-                        } catch (Exception e) {
-                            logger.error("烧录机信息处理失败: " + e.getMessage());
-                        }
-                    }
-                }
-                
-                // 在JavaFX应用线程中更新UI，包含别名信息
-                Platform.runLater(() -> {
-                    addNetworkData(alias + dataStr);
+                    addNetworkData(data);
                 });
             }
 
@@ -1037,9 +1000,9 @@ public class AutoProcessPanel extends BorderPane {
         // portNameColumn.setCellValueFactory(cellData -> new SimpleStringProperty(cellData.getValue().getPortName()));
         // portNameColumn.setPrefWidth(100);
 
-        table.getColumns().addAll(deviceIdColumn, barcodeColumn, scanTimeColumn
+        table.getColumns().addAll(deviceIdColumn, barcodeColumn, scanTimeColumn);
         // , portNameColumn
-        );
+        // );
         return table;
     }
 
@@ -1675,13 +1638,88 @@ public class AutoProcessPanel extends BorderPane {
             log("[配置更新] 已将预期条码数量更新为当前条码数量: " + intQty);
         }
     }
+
+    public static void main(String[] args) {
+        AutoProcessPanel autoProcessPanel = new AutoProcessPanel();
+        String str="1B1B1B1B1B0A1B0A62021741F1B8FFAA40656D732F5F74657374FF5B7B2273697465223A223031222C22636F6465223A22344335413030303044453435222C22726573756C74223A307D2C7B2273697465223A223032222C22636F6465223A22344335413030303044453436222C22726573756C74223A317D2C7B2273697465223A223033222C22636F6465223A22344335413030303044453437222C22726573756C74223A317D2C7B2273697465223A223034222C22636F6465223A22344335413030303044453438222C22726573756C74223A317D5D";
+        autoProcessPanel.burnerProcessBarcodeData(str);
+        
+    }
     /**
      * 处理烧录机信息数据
      * @param value
      */
     protected void burnerProcessBarcodeData(String value) {
-        log("[烧录机信息] " + value);
-        
+        log("[烧录机接收信息] " + value);
+        //判断信息是否是带前缀的数据：burner.tcp.json.prefix
+        ConfigService configService = ConfigService.getInstance();
+        String jsonPrefix = configService.getConfigValueByKey("burner.tcp.json.prefix");
+        log("烧录指令前缀："+jsonPrefix);
+        if (value.toLowerCase().contains(jsonPrefix)) {
+            // log("[烧录机] 收到数量响应: " + value+";前缀："+jsonPrefix);
+            // 提取条码数量,把value中的jsonPrefix替换为空字符串
+            String barcodes=value.toUpperCase().replaceAll(jsonPrefix.toUpperCase(), "").trim();
+            log("[烧录机] 提取后的字符串: " + barcodes);
+            
+            // 检查字符串是否已经是JSON格式（以[开头，以]结尾）
+            boolean isProbablyJson = barcodes.trim().startsWith("[") && barcodes.trim().endsWith("]");
+            
+            if (!isProbablyJson) {
+                try {
+                    // 如果不是JSON格式，尝试进行hexToString转换
+                    log("[烧录机] 尝试进行十六进制转换");
+                    String converted = HexUtils.hexToString(barcodes, "UTF-8");
+                    log("[烧录机] 转换后的字符串: " + converted);
+                    barcodes = converted;
+                } catch (Exception e) {
+                    log("[烧录机] 十六进制转换失败，使用原始字符串: " + e.getMessage());
+                }
+            } else {
+                log("[烧录机] 字符串似乎已经是JSON格式，跳过转换");
+            }
+            try {
+                // 清理可能的无效字符
+                barcodes = barcodes.trim();
+                // 解析JSON字符串为条码列表
+                JSONArray jsonArray = JSONArray.parseArray(barcodes);
+                for (int i = 0; i < jsonArray.size(); i++) {
+                    JSONObject jsonObject = jsonArray.getJSONObject(i);
+                    String site = jsonObject.getString("site");
+                    String code = jsonObject.getString("code");
+                    int result = jsonObject.getIntValue("result");
+                    log("[烧录机] 站点: " + site + ", 条码: " + code + ", 结果: " + result);
+                    //把数据保存到当前页面烧录结果中，并保存到数据库
+                    boolean success = result == 1; // 假设1表示成功，0表示失败
+                    String message = success ? "烧录成功" : "烧录失败";
+                    LocalDateTime now = LocalDateTime.now();
+                    
+                    // 保存到当前页面烧录结果中
+                    BurnResultData burnResultData = new BurnResultData(code, success, message);
+                    burnResultDataList.add(burnResultData);
+                    log("[数据操作] 添加烧录结果到界面显示: 条码=" + code + ", 状态=" + (success ? "成功" : "失败"));
+                    
+                    // 创建ProgramResult对象并保存到数据库
+                    try {
+                        ProgramResult programResult = new ProgramResult(code, success ? "成功" : "失败", deviceId);
+                        programResult.setTime(now);
+                        programResult.setRem(message);
+                        
+                        DatabaseManager.saveProgramResult(programResult);
+                        log("[数据库操作] 成功保存烧录结果到数据库: 条码=" + code);
+                    } catch (Exception e) {
+                        log("[数据库错误] 保存烧录结果到数据库失败: " + e.getMessage());
+                    }
+                }
+            }catch (Exception e) {
+                log("[烧录机] 处理条码数据时出错: " + e.getMessage());
+                log("[烧录机] 错误详情 - 异常类型: " + e.getClass().getName());
+                log("[烧录机] 错误详情 - 尝试解析的字符串: " + barcodes);
+                log("[烧录机] 错误详情 - 字符串长度: " + barcodes.length());
+                log("[烧录机] 错误详情 - 首字符: " + (barcodes.isEmpty() ? "空" : (int)barcodes.charAt(0)) + " (" + (barcodes.isEmpty() ? "空" : barcodes.charAt(0)) + ")");
+                log("[烧录机] 错误详情 - 尾字符: " + (barcodes.isEmpty() ? "空" : (int)barcodes.charAt(barcodes.length()-1)) + " (" + (barcodes.isEmpty() ? "空" : barcodes.charAt(barcodes.length()-1)) + ")");
+                e.printStackTrace();
+            }
+        }
     }
     /**
      * 处理条码数据的封装方法
@@ -1759,25 +1797,52 @@ public class AutoProcessPanel extends BorderPane {
      */
     private void  sendBarcodeToBurner(){
         log("[流程] 发送条码列表到烧录机: " );
-        String barcodesStr = getBarcodesStr();
+        String barcodesStr = packBarcodesToJson();
+        log("[流程] 条码数据: " + barcodesStr);
+        //然后把barcodesstr进行hex编码
+        barcodesStr = HexUtils.bytesToHex(barcodesStr.getBytes());
         // 通过NetworkService发送指令到烧录机
         NetworkService networkService = NetworkService.getInstance();
         networkService.sendData(barcodesStr, TcpServiceEnum.BURNER);
-        log("[操作] 条码数据: " + barcodesStr);
+        log("[流程] 条码数据-Hex: " + barcodesStr);
+        //下一步：传烧录机开始指令：burner.tcp.begin.command
+        ConfigService configService = ConfigService.getInstance();
+        String startCommand = configService.getConfigValueByKey("burner.tcp.begin.command");
+        networkService.sendData(startCommand, TcpServiceEnum.BURNER);
+        log("[流程] 发送开始指令到烧录机: " + startCommand);
+
     }
     //把当前条码列表打包成json字符串
-    private String packBarcodesToJson() {
-       JSONObject jsonObject = new JSONObject();
-       jsonObject.put("barcodes", currentBarcodes);
-       return jsonObject.toString();
-    }
     /**
-     * 把当前条码列表转换为逗号分隔的字符串
-     * @return 逗号分隔的条码字符串
+     * 把当前条码列表转换为json字符串
+     * 需转为：[{"site":"01","code":"4C5A0000DE45"},{"site":"02","code":"4C5A0000DE46"},{"site":"03","code":"4C5A0000
+DE47"},{"site":"04","code":"4C5A0000DE48"}]格式。
+     * 注意：固定每个条码的site为2个字符，site内容为流水01-12，且必须12个对象。没数据的code传空。
+     * @return json字符串
      */
-    private String getBarcodesStr(){
-        return String.join(",", currentBarcodes);
+    
+    private String packBarcodesToJson() {
+       JSONArray jsonArray = new JSONArray();
+       
+       // 创建12个条码对象，site为01-12流水号
+       for (int i = 1; i <= 12; i++) {
+           JSONObject barcodeObj = new JSONObject();
+           // 格式化site为两位数字，如01, 02等
+           String site = String.format("%02d", i);
+           barcodeObj.put("site", site);
+           
+           // 如果currentBarcodes中有对应索引的数据，则使用该数据，否则设为空
+           String code = "";
+           if (i - 1 < currentBarcodes.size()) {
+               code = currentBarcodes.get(i - 1);
+           }
+           barcodeObj.put("code", code);
+           jsonArray.add(barcodeObj);
+       }
+       
+       return jsonArray.toString();
     }
+
     /**
      * 获取烧录机条码数
      * 通过TCP发送指令并获取返回结果
@@ -1788,18 +1853,6 @@ public class AutoProcessPanel extends BorderPane {
             // 从配置服务获取发送指令
             ConfigService configService = ConfigService.getInstance();
             String sendCommand = configService.getConfigValueByKey("burner.qty.query.command");
-            // //判断是否为空
-            // if (sendCommand == null || sendCommand.isEmpty()) {
-            //     ConfigItem configItem = new ConfigItem();
-            //     configItem.setConfigKey("burner.qty.query.command");
-            //     configItem.setConfigValue("");
-            //     // configItem.setConfigType("String");
-            //     configItem.setDataType("String");
-            //     configItem.setConfigDescription("烧录机数量查询指令");
-            //     configService.addConfigItem(configItem);
-            //     log("[错误]"+configItem.getConfigKey()+" 配置中未指定烧录机数量查询指令");
-            //     return -1;
-            // }
             // 通过NetworkService发送指令到烧录机
             NetworkService networkService = NetworkService.getInstance();
             networkService.sendData(sendCommand, TcpServiceEnum.BURNER);
@@ -1935,128 +1988,6 @@ public class AutoProcessPanel extends BorderPane {
     }
 
     /**
-     * 模拟PLC开始指令处理
-     */
-    private void simulatePlcStartCommand() {
-        log("[操作] 用户点击了'模拟PLC开始'按钮");
-        if (!processStarted.get() || !barcodeVerified.get() || !waitingForStartCommand.get()
-                || programCommandSent.get()) {
-            log("[操作结果] 请先完成条码验证步骤");
-            return;
-        }
-
-        log("[PLC指令] 接收到PLC开始指令，准备发送烧录指令给上位机...");
-        currentStatus.set("发送烧录指令");
-        log("[流程状态] 当前流程状态：发送烧录指令");
-
-        // 模拟发送烧录指令
-        programCommandSent.set(true);
-        waitingForProgramResult.set(true);
-        currentStatus.set("等待烧录结果");
-        log("[流程状态] 当前流程状态：等待烧录结果");
-
-        // 模拟上位机烧录结果
-        log("[系统操作] 开始模拟上位机烧录结果处理...");
-        simulateUpperComputerResult();
-    }
-
-    /**
-     * 模拟上位机烧录结果处理
-     */
-    private void simulateUpperComputerResult() {
-        // 模拟延迟
-        new Thread(() -> {
-            try {
-                Thread.sleep(2000); // 模拟2秒烧录时间
-
-                Platform.runLater(() -> {
-                    if (processStarted.get() && programCommandSent.get() && waitingForProgramResult.get()) {
-                        log("[上位机数据] 收到上位机烧录结果");
-                        currentStatus.set("处理结果");
-                        log("[流程状态] 当前流程状态：处理结果");
-
-                        // 清空之前的结果
-                        burnResultDataList.clear();
-                        log("[数据操作] 清空之前的烧录结果");
-
-                        // 创建批次ID
-                        String batchId = UUID.randomUUID().toString();
-                        log("[数据操作] 创建新批次ID: " + batchId);
-
-                        // 创建ProgramResult对象，准备回传给EMS
-                        ProgramResult programResult = new ProgramResult();
-                        programResult.setBatchId(batchId);
-                        programResult.setCompleteTime(LocalDateTime.now());
-                        log("[数据操作] 创建ProgramResult对象，准备处理结果数据");
-
-                        // 模拟生成烧录结果
-                        boolean allSuccess = true;
-                        LocalDateTime now = LocalDateTime.now();
-                        log("[系统操作] 开始为每个条码生成烧录结果...");
-
-                        for (String barcode : currentBarcodes) {
-                            boolean success = random.nextDouble() > 0.1; // 90%成功率
-                            String message = success ? "烧录成功" : "烧录失败，未知错误";
-
-                            burnResultDataList.add(new BurnResultData(barcode, success, message));
-                            log("[烧录结果] 条码: " + barcode + ", 状态: " + (success ? "成功" : "失败") + ", 消息: " + message);
-
-                            // 添加设备结果到ProgramResult
-                            DeviceResult deviceResult = new DeviceResult(deviceId, barcode, success, message);
-                            programResult.addDeviceResult(deviceResult);
-                            log("[数据操作] 添加设备结果到ProgramResult对象");
-
-                            // 保存到数据库
-                            try {
-                                DatabaseManager.saveProgramResult(batchId, deviceId, barcode, success, message, now);
-                                log("[数据库操作] 成功保存烧录结果到数据库");
-                            } catch (SQLException e) {
-                                log("[数据库错误] 保存烧录结果到数据库失败: " + e.getMessage());
-                            }
-
-                            if (!success) {
-                                allSuccess = false;
-                            }
-                        }
-
-                        // 设置整体状态
-                        programResult.setStatus(allSuccess ? "success" : "partial_failure");
-                        log("[数据操作] 设置批次整体状态为: " + programResult.getStatus());
-
-                        // 回传EMS
-                        try {
-                            EmsService.getInstance().sendProgramResult(programResult);
-                            log("[EMS操作] 烧录结果已成功回传给EMS系统");
-                        } catch (Exception e) {
-                            log("[EMS错误] 烧录结果回传EMS系统失败: " + e.getMessage());
-                        }
-
-                        // 流程完成
-                        currentStatus.set(allSuccess ? "完成" : "部分失败");
-                        waitingForProgramResult.set(false);
-                        processCompleted.set(true);
-                        log("[流程状态] 当前流程状态：" + (allSuccess ? "完成" : "部分失败"));
-
-                        if (allSuccess) {
-                            log("[流程完成] 流程执行完成！");
-                            log("[流程统计] 总共处理条码数量: " + currentBarcodes.size() + "，全部成功");
-                        } else {
-                            log("[流程完成] 警告: 流程执行完成，但部分条码烧录失败！");
-                            log("[流程统计] 总共处理条码数量: " + currentBarcodes.size());
-                        }
-                        // 重置流程
-                        resetProcess();
-
-                    }
-                });
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log("[系统错误] 模拟上位机结果处理线程被中断");
-            }
-        }).start();
-    }
-
-    /**
      * 记录日志到UI和控制台
      * @param message 日志消息
      */
@@ -2085,73 +2016,6 @@ public class AutoProcessPanel extends BorderPane {
     }
 
     private boolean isInitialized = false;
-
-    /**
-     * 显示模拟COM口数据的输入弹窗
-     */
-    private void showComDataInputDialog() {
-        if (!isMonitoringComPort) {
-            log("[操作结果] 请先开始串口监控");
-            return;
-        }
-
-        String selectedPort = comPortComboBox.getValue();
-
-        // 创建对话框
-        Dialog<String> dialog = new Dialog<>();
-        dialog.setTitle("模拟COM口数据");
-        dialog.setHeaderText("请输入要模拟的COM口数据 (当前端口: " + selectedPort + ")");
-
-        // 设置对话框按钮
-        ButtonType confirmButtonType = new ButtonType("确认", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(confirmButtonType, ButtonType.CANCEL);
-
-        // 创建输入框
-        TextField dataTextField = new TextField();
-        dataTextField.setPromptText("输入条码数据，例如: BAR-123456");
-
-        // 添加输入框到对话框
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(20, 150, 10, 10));
-
-        grid.add(new Label("条码数据:"), 0, 0);
-        grid.add(dataTextField, 1, 0);
-
-        dialog.getDialogPane().setContent(grid);
-
-        // 请求焦点到输入框
-        Platform.runLater(() -> dataTextField.requestFocus());
-
-        // 设置结果转换器
-        dialog.setResultConverter(dialogButton -> {
-            if (dialogButton == confirmButtonType) {
-                return dataTextField.getText();
-            }
-            return null;
-        });
-
-        // 显示对话框并处理结果
-        Optional<String> result = dialog.showAndWait();
-        result.ifPresent(inputData -> {
-            if (inputData != null && !inputData.trim().isEmpty()) {
-                String barcode = inputData.trim();
-
-                // 模拟COM口数据接收
-                Platform.runLater(() -> {
-                    BarcodeData barcodeData = new BarcodeData(deviceId, barcode, selectedPort);
-                    barcodeDataList.add(barcodeData);
-                    currentBarcodes.add(barcode);
-                    log("[串口数据] 从串口" + selectedPort + "模拟接收到条码: " + barcode);
-                    log("[数据状态] 当前条码数量: " + barcodeDataList.size() + ", 预期条码数量: " + expectedBarcodeCount.get());
-                });
-            } else {
-                log("[操作结果] 输入的COM口数据不能为空");
-            }
-        });
-    }
-
 
     /**
      * 模拟扫描条码

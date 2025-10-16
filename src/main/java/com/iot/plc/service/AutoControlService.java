@@ -2,7 +2,7 @@ package com.iot.plc.service;
 
 import com.iot.plc.model.BarcodeData;
 import com.iot.plc.model.ProgramResult;
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSONObject;
 import com.iot.plc.logger.Logger;
 
 import java.util.ArrayList;
@@ -22,7 +22,7 @@ public class AutoControlService {
     
     // Services
     private final PlcService plcService;
-    private final UpperComputerService upperService;
+    // private final UpperComputerService upperService;
     private final EmsService emsService;
     
     private static volatile AutoControlService instance;
@@ -30,7 +30,7 @@ public class AutoControlService {
     private AutoControlService() {
         // 初始化服务，但捕获可能的类加载异常
         this.plcService = initPlcService();
-        this.upperService = initUpperComputerService();
+        // this.upperService = initUpperComputerService();
         this.emsService = initEmsService();
         
         initServices();
@@ -57,15 +57,15 @@ public class AutoControlService {
         }
     }
     
-    // 初始化UpperComputerService，处理可能的类加载异常
-    private UpperComputerService initUpperComputerService() {
-        try {
-            return UpperComputerService.getInstance();
-        } catch (Throwable e) {
-            logger.warn("无法初始化UpperComputerService，将使用模拟服务: " + e.getMessage());
-            return null;
-        }
-    }
+    // // 初始化UpperComputerService，处理可能的类加载异常
+    // private UpperComputerService initUpperComputerService() {
+    //     try {
+    //         return UpperComputerService.getInstance();
+    //     } catch (Throwable e) {
+    //         logger.warn("无法初始化UpperComputerService，将使用模拟服务: " + e.getMessage());
+    //         return null;
+    //     }
+    // }
     
     // 初始化EmsService，处理可能的类加载异常
     private EmsService initEmsService() {
@@ -154,10 +154,10 @@ public class AutoControlService {
     }
     
     private void checkStartCommand(String message) {
-        if (upperService == null) {
-            logger.warn("UpperComputerService未初始化，无法发送烧录命令");
-            return;
-        }
+        // if (upperService == null) {
+        //     logger.warn("UpperComputerService未初始化，无法发送烧录命令");
+        //     return;
+        // }
         
         if ("start_command".equals(message)) {
             List<String> barcodes = new ArrayList<>();
@@ -165,13 +165,13 @@ public class AutoControlService {
                 barcodes.add(data.getBarcode());
             }
             
-            try {
-                upperService.sendProgramCommand(currentDeviceId, barcodes);
-                updateState(State.PROGRAMMING);
-                logger.info("开始烧录，条码数量: " + barcodes.size());
-            } catch (Exception e) {
-                logger.error("发送烧录命令失败: " + e.getMessage(), e);
-            }
+            // try {
+            //     upperService.sendProgramCommand(currentDeviceId, barcodes);
+            //     updateState(State.PROGRAMMING);
+            //     logger.info("开始烧录，条码数量: " + barcodes.size());
+            // } catch (Exception e) {
+            //     logger.error("发送烧录命令失败: " + e.getMessage(), e);
+            // }
         }
     }
     
@@ -186,7 +186,7 @@ public class AutoControlService {
         try {
             emsService.sendProgramResult(result);
             updateState(State.REPORTING);
-            logger.info("结果已上报EMS: " + result.getStatus());
+            logger.info("结果已上报EMS: " + result.getResult());
         } catch (Exception e) {
                 logger.error("上报结果失败: " + e.getMessage(), e);
             }

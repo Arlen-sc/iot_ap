@@ -107,26 +107,28 @@ public class LogManager {
     /**
      * 保存烧录结果日志
      */
-    public void saveProgramResult(String batchId, String deviceId, String barcode, boolean result, String errorMessage, LocalDateTime programTime) {
+    public void saveProgramResult(String deviceId, String barcode, boolean result, String remark, LocalDateTime programTime) {
         if (!shouldLog) {
+            Logger.getInstance().debug("日志记录已禁用，跳过保存烧录结果");
             return;
         }
         
-        String sql = "INSERT INTO program_result (batch_id, device_id, barcode, result, error_message, program_time) VALUES (?, ?, ?, ?, ?, ?)";
+        // 修改SQL语句，移除batch_id字段，将remark改为error_message以匹配表结构
+        String sql = "INSERT INTO program_result (device_id, barcode, result, error_message, program_time) VALUES (?, ?, ?, ?, ?)";
         
         try (Connection conn = DatabaseManager.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             
-            pstmt.setString(1, batchId);
-            pstmt.setString(2, deviceId);
-            pstmt.setString(3, barcode);
-            pstmt.setBoolean(4, result);
-            pstmt.setString(5, errorMessage);
-            pstmt.setTimestamp(6, Timestamp.valueOf(programTime));
+            pstmt.setString(1, deviceId);
+            pstmt.setString(2, barcode);
+            pstmt.setBoolean(3, result);
+            pstmt.setString(4, remark);
+            pstmt.setTimestamp(5, Timestamp.valueOf(programTime));
             
             pstmt.executeUpdate();
+            Logger.getInstance().debug("烧录结果保存成功: deviceId=" + deviceId + ", barcode=" + barcode);
         } catch (SQLException e) {
-            Logger.getInstance().error("保存烧录结果日志失败: " + e.getMessage());
+            Logger.getInstance().error("保存烧录结果日志失败: " + e.getMessage(), e);
         }
     }
 

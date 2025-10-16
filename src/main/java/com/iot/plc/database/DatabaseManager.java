@@ -82,7 +82,7 @@ public class DatabaseManager {
             
             String createProgramResultTable = "CREATE TABLE IF NOT EXISTS program_result (" +
                     "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                    "batch_id VARCHAR(50) NOT NULL," +
+                    "batch_id VARCHAR(50)," +
                     "device_id VARCHAR(20) NOT NULL," +
                     "barcode VARCHAR(50) NOT NULL," +
                     "result BOOLEAN NOT NULL," +
@@ -113,7 +113,7 @@ public class DatabaseManager {
             // 创建索引
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_barcode_device ON barcode_data(device_id)");
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_barcode_scan_time ON barcode_data(scan_time)");
-            stmt.execute("CREATE INDEX IF NOT EXISTS idx_program_batch ON program_result(batch_id)");
+            // 移除batch_id索引，因为不再需要batch_id字段
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_program_device ON program_result(device_id)");
             
             logger.info("数据库初始化完成");
@@ -524,8 +524,32 @@ public class DatabaseManager {
     }
     
     // 修改saveProgramResult方法，通过LogManager调用
-    public static void saveProgramResult(String batchId, String deviceId, String barcode, boolean result, String errorMessage, LocalDateTime programTime) throws SQLException {
-        LogManager.getInstance().saveProgramResult(batchId, deviceId, barcode, result, errorMessage, programTime);
+    public static void saveProgramResult(String deviceId, String barcode, boolean result, String remark, LocalDateTime programTime) throws SQLException {
+        LogManager.getInstance().saveProgramResult(deviceId, barcode, result, remark, programTime);
+    }
+    
+    /**
+     * 保存烧录结果到数据库
+     * @param result 烧录结果
+     */
+    public static void saveProgramResult(ProgramResult result) {
+        try {
+            // 直接调用LogManager的保存方法，传入必要的参数
+            // 将String类型的result转换为boolean类型
+            boolean success = "success".equalsIgnoreCase(result.getResult()) || 
+                             "true".equalsIgnoreCase(result.getResult()) || 
+                             "1".equals(result.getResult());
+            
+            LogManager.getInstance().saveProgramResult(
+                result.getDeviceId(),
+                result.getCode(),
+                success,
+                result.getRem(),
+                result.getTime()
+            );
+        } catch (Exception e) {
+            Logger.getInstance().error("保存烧录结果失败: " + e.getMessage());
+        }
     }
     
 
@@ -544,22 +568,17 @@ public class DatabaseManager {
             pstmt.setString(1, batchId);
             ResultSet rs = pstmt.executeQuery();
             
-            ProgramResult programResult = new ProgramResult();
-            programResult.setBatchId(batchId);
-            
             while (rs.next()) {
                 String deviceId = rs.getString("device_id");
                 String barcode = rs.getString("barcode");
                 boolean success = rs.getBoolean("result");
                 String errorMessage = rs.getString("error_message");
-                String timestamp = rs.getString("program_time");
+                Timestamp timestamp = rs.getTimestamp("program_time");
                 
-                DeviceResult deviceResult = new DeviceResult(deviceId, barcode, success, errorMessage);
-                programResult.addDeviceResult(deviceResult);
-                programResult.setTimestamp(timestamp);
-            }
-            
-            if (!programResult.getResults().isEmpty()) {
+                // 创建ProgramResult对象
+                ProgramResult programResult = new ProgramResult(barcode, success ? "成功" : "失败", deviceId);
+                programResult.setTime(timestamp.toLocalDateTime());
+                programResult.setRem(errorMessage != null ? errorMessage : "");
                 results.add(programResult);
             }
         }
@@ -568,39 +587,25 @@ public class DatabaseManager {
     
     public static List<ProgramResult> getAllProgramResults() throws SQLException {
         List<ProgramResult> results = new ArrayList<>();
-        Map<String, ProgramResult> batchMap = new HashMap<>();
-        String sql = "SELECT * FROM program_result ORDER BY batch_id, program_time DESC";
+        String sql = "SELECT * FROM program_result ORDER BY program_time DESC";
         
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql);
              ResultSet rs = pstmt.executeQuery()) {
             
             while (rs.next()) {
-                String batchId = rs.getString("batch_id");
                 String deviceId = rs.getString("device_id");
                 String barcode = rs.getString("barcode");
                 boolean success = rs.getBoolean("result");
                 String errorMessage = rs.getString("error_message");
-                String timestamp = rs.getString("program_time");
+                Timestamp timestamp = rs.getTimestamp("program_time");
                 
-                // 获取或创建该批次的ProgramResult对象
-                ProgramResult programResult = batchMap.get(batchId);
-                if (programResult == null) {
-                    programResult = new ProgramResult();
-                    programResult.setBatchId(batchId);
-                    programResult.setTimestamp(timestamp);
-                    batchMap.put(batchId, programResult);
-                }
-                
-                DeviceResult deviceResult = new DeviceResult(deviceId, barcode, success, errorMessage);
-                programResult.addDeviceResult(deviceResult);
+                // 创建ProgramResult对象
+                ProgramResult programResult = new ProgramResult(barcode, success ? "成功" : "失败", deviceId);
+                programResult.setTime(timestamp.toLocalDateTime());
+                programResult.setRem(errorMessage != null ? errorMessage : "");
+                results.add(programResult);
             }
-            
-            // 将Map中的所有ProgramResult对象添加到结果列表
-            results.addAll(batchMap.values());
-            
-            // 按时间倒序排序
-            results.sort((r1, r2) -> r2.getTimestamp().compareTo(r1.getTimestamp()));
             
             logger.debug("获取所有烧录结果成功，共" + results.size() + "条记录");
             return results;

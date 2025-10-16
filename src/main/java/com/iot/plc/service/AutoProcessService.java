@@ -2,7 +2,7 @@ package com.iot.plc.service;
 
 import com.iot.plc.model.BarcodeData;
 import com.iot.plc.model.DeviceResult;
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSONObject;
 import com.iot.plc.enumx.TcpServiceEnum;
 import com.iot.plc.listener.NetworkListener;
 
@@ -31,7 +31,6 @@ public class AutoProcessService {
     // 服务实例
     private final NetworkService networkService;
     private final PlcService plcService;
-    private final UpperComputerService upperComputerService;
     
     // 状态管理
     private String currentStatus = "空闲";
@@ -57,8 +56,6 @@ public class AutoProcessService {
     private AutoProcessService() {
         this.networkService = NetworkService.getInstance();
         this.plcService = PlcService.getInstance();
-        this.upperComputerService = UpperComputerService.getInstance();
-        
         initProcess();
     }
     
@@ -70,15 +67,6 @@ public class AutoProcessService {
     }
     
     private void initProcess() {
-        // 初始化PLC消息监听器
-        plcService.addPlcMessageListener((messageType, message) -> {
-            if ("product_count".equals(messageType)) {
-                handleProductCountMessage(message);
-            } else if ("start_command".equals(messageType)) {
-                handleStartCommandMessage();
-            }
-        });
-        
         // 初始化TCP扫码机监听器
         networkService.addListener(new NetworkListener() {
             @Override
@@ -116,148 +104,9 @@ public class AutoProcessService {
                 }
             }
         });
+    }
+    
         
-        // 初始化流程定时器
-        new Thread(() -> {
-            while (true) {
-                try {
-                    Thread.sleep(500);
-                    if (processStarted.get()) {
-                        checkProcessStatus();
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-        }).start();
-        
-        // 初始化上位机结果监听器
-        initUpperComputerResultListener();
-    }
-    
-    private void handleProductCountMessage(String message) {
-        try {
-            // 解析产品数量消息
-            JSONObject jsonObject = JSONObject.parseObject(message);
-            if (jsonObject.containsKey("type") && "product_count".equals(jsonObject.getString("type")) && jsonObject.containsKey("data")) {
-                JSONObject dataObject = jsonObject.getJSONObject("data");
-                int count = dataObject.containsKey("count") ? dataObject.getIntValue("count") : 0;
-                expectedBarcodeCount = count;
-                log("接收到PLC产品数量: " + count);
-                
-                // 验证条码数量
-                if (processStarted.get() && !barcodeVerified.get()) {
-                    // 假设NetworkService提供了类似的方法来获取条码数量
-                    int actualCount = getScannerBarcodeCount();
-                    actualBarcodeCount = actualCount;
-                    if (actualCount == count) {
-                        barcodeVerified.set(true);
-                        currentStatus = "验证通过";
-                        log("条码数量验证通过: " + actualCount + " = " + count);
-                        // 发送确认指令给PLC - 从配置服务获取，默认值为"ok"
-                        ConfigService configService = ConfigService.getInstance();
-                        String okStatus = configService.getConfigValueByKeyOrDefault("plc.barcode.verified.status.ok", "ok");
-                        String okCommand = String.format("{\"type\":\"barcode_verified\",\"status\":\"%s\"}", okStatus);
-                        plcService.sendToPlc(deviceId, "127.0.0.1", 502, okCommand);
-                        waitingForStartCommand.set(true);
-                    } else {
-                        log("错误: 条码数量不匹配! 实际: " + actualCount + " 预期: " + count);
-                        // 发送异常指令给PLC
-                        plcService.sendToPlc(deviceId, "127.0.0.1", 502, "{\"type\":\"barcode_verified\",\"status\":\"error\",\"message\":\"Barcode count mismatch\"}");
-                        currentStatus = "异常";
-                        resetProcess();
-                    }
-                }
-            } else {
-                log("警告: 接收到无效的产品数量消息: " + message);
-            }
-        } catch (Exception e) {
-            log("错误: 无法解析产品数量消息: " + message + ", 错误: " + e.getMessage());
-        }
-    }
-    
-    private void handleStartCommandMessage() {
-        if (processStarted.get() && barcodeVerified.get() && waitingForStartCommand.get() && !programCommandSent.get()) {
-            log("接收到PLC开始指令，准备发送烧录指令给上位机...");
-            currentStatus = "发送烧录指令";
-            
-            // 收集条码数据
-            List<BarcodeData> barcodes = getScannerBarcodes();
-            currentBarcodes.clear();
-            for (BarcodeData barcode : barcodes) {
-                currentBarcodes.add(barcode.getBarcode());
-            }
-            
-            // 发送烧录指令
-            String result = upperComputerService.sendProgramCommand(deviceId, currentBarcodes);
-            log("发送烧录指令结果: " + result);
-            
-            programCommandSent.set(true);
-            waitingForProgramResult.set(true);
-            currentStatus = "等待烧录结果";
-        }
-    }
-    
-    private void checkProcessStatus() {
-        // 这里可以检查流程状态并处理超时等异常情况
-        if (processStarted.get()) {
-            // 检查是否超过预设的处理时间
-            // 如果需要实现超时逻辑，可以在这里添加
-        }
-    }
-    
-    /**
-     * 初始化上位机结果监听器
-     */
-    private void initUpperComputerResultListener() {
-        // 添加烧录结果监听器
-        upperComputerService.addProgramResultListener(result -> {
-            if (processStarted.get() && programCommandSent.get() && waitingForProgramResult.get()) {
-                log("收到上位机烧录结果，批次ID: " + result.getBatchId());
-                currentStatus = "处理结果";
-                
-                // 显示烧录结果
-                StringBuilder resultSummary = new StringBuilder();
-                resultSummary.append("烧录结果:\n");
-                
-                boolean allSuccess = true;
-                for (DeviceResult deviceResult : result.getResults()) {
-                    String status = deviceResult.isSuccess() ? "成功" : "失败";
-                    resultSummary.append("  条码: ")
-                              .append(deviceResult.getBarcode())
-                              .append(", 状态: ")
-                              .append(status);
-                    
-                    if (!deviceResult.isSuccess() && deviceResult.getErrorMessage() != null) {
-                        resultSummary.append(", 错误: ")
-                                  .append(deviceResult.getErrorMessage());
-                        allSuccess = false;
-                    }
-                    resultSummary.append("\n");
-                }
-                
-                log(resultSummary.toString());
-                
-                // EMS已在上位机服务中发送，这里只记录状态
-                log("结果已回传给EMS");
-                
-                // 流程完成
-                currentStatus = allSuccess ? "完成" : "部分失败";
-                waitingForProgramResult.set(false);
-                
-                if (allSuccess) {
-                    log("流程执行完成！");
-                } else {
-                    log("警告: 流程执行完成，但部分条码烧录失败！");
-                }
-                
-                // 注意：根据用户需求，流程完成后需要保持当前状态，不需要自动重置
-                // 用户要求："且这5个步骤需要按顺序执行，不然就需要清空，重新从1走。"
-            }
-        });
-    }
-    
     private void updateStatus() {
         // 更新连接状态
         // 假设NetworkService提供了检查TCP连接状态的方法
@@ -266,9 +115,6 @@ public class AutoProcessService {
         
         boolean plcConnected = plcService.isPlcConnected();
         plcStatus = plcConnected ? "已连接" : "未连接";
-        
-        boolean upperComputerConnected = upperComputerService.isConnected();
-        upperComputerStatus = upperComputerConnected ? "已连接" : "未连接";
         
         // EMS状态检查
         try {
@@ -294,11 +140,6 @@ public class AutoProcessService {
         
         if (!plcService.isPlcConnected()) {
             log("错误: PLC未连接");
-            return;
-        }
-        
-        if (!upperComputerService.isConnected()) {
-            log("错误: 上位机未连接");
             return;
         }
         
