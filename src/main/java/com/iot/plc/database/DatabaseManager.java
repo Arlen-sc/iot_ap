@@ -524,7 +524,7 @@ public class DatabaseManager {
     }
     
     // 修改saveProgramResult方法，通过LogManager调用
-    public static void saveProgramResult(String deviceId, String barcode, boolean result, String remark, LocalDateTime programTime) throws SQLException {
+    public static void saveProgramResult(String deviceId, String barcode, boolean result, String remark, Timestamp programTime) throws SQLException {
         LogManager.getInstance().saveProgramResult(deviceId, barcode, result, remark, programTime);
     }
     
@@ -574,7 +574,7 @@ public class DatabaseManager {
                 pstmt.setString(2, result.getCode() != null ? result.getCode() : "");
                 pstmt.setBoolean(3, success);
                 pstmt.setString(4, result.getRem() != null ? result.getRem() : "");
-                pstmt.setTimestamp(5, Timestamp.valueOf(result.getTime()));
+                pstmt.setTimestamp(5, result.getTime());
                 
                 pstmt.executeUpdate();
                 Logger.getInstance().info("通过备用方案成功保存烧录结果到数据库");
@@ -609,7 +609,7 @@ public class DatabaseManager {
                 
                 // 创建ProgramResult对象
                 ProgramResult programResult = new ProgramResult(barcode, success ? "成功" : "失败", deviceId);
-                programResult.setTime(timestamp.toLocalDateTime());
+                programResult.setTime(timestamp);
                 programResult.setRem(errorMessage != null ? errorMessage : "");
                 results.add(programResult);
             }
@@ -634,7 +634,7 @@ public class DatabaseManager {
                 
                 // 创建ProgramResult对象
                 ProgramResult programResult = new ProgramResult(barcode, success ? "成功" : "失败", deviceId);
-                programResult.setTime(timestamp.toLocalDateTime());
+                programResult.setTime(timestamp);
                 programResult.setRem(errorMessage != null ? errorMessage : "");
                 results.add(programResult);
             }

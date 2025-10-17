@@ -110,13 +110,19 @@ public class InitConfigService {
         addDefaultConfig(configService, "plc.tcp.error.command", "00 05 00 00 00 06 01 06 15 7E 00 02", "PLC-ERROR指令", "string", false);
         //plc.tcp完成指令
         addDefaultConfig(configService, "plc.tcp.complete.command", "00 05 00 00 00 06 01 06 15 7E 00 03", "PLC-完成指令", "string", false);
+        // plc.tcp.next.command
+        addDefaultConfig(configService, "plc.tcp.next.command", "00 05 00 00 00 06 01 06 15 7E 00 04", "PLC-NEXT指令", "string", false);
+        // plc.qty.query.command
+        addDefaultConfig(configService, "plc.qty.query.command", "00 05 00 00 00 06 01 04 15 7D 00 01", "PLC条码数查询指令", "string", false);
+        //plc.qty.query.response
+        addDefaultConfig(configService, "plc.qty.query.response", "00 05 00 00 00 05 01 04 02 00", "PLC条码数查询响应指令", "string", false);
         //burner.tcp.complete.command
         addDefaultConfig(configService, "burner.tcp.complete.command", "1b1b1b1b1b0a1b0a520205e2727cffab40656d732f5f6c65617665", "burner-完成指令", "string", false);
-        //burner.qty.query.command
-        addDefaultConfig(configService, "burner.qty.query.command", "00 05 00 00 00 06 01 04 15 7D 00 01", "burner条码数查询指令", "string", false);
-        //burner.qty.query.response
-        addDefaultConfig(configService, "burner.qty.query.response", "00 05 00 00 00 05 01 04 02 00", "burner条码数查询响应指令", "string", false);
-        //burner.tcp.begin.command
+        // //burner.qty.query.command
+        // addDefaultConfig(configService, "burner.qty.query.command", "00 05 00 00 00 06 01 04 15 7D 00 01", "burner条码数查询指令", "string", false);
+        // //burner.qty.query.response
+        // addDefaultConfig(configService, "burner.qty.query.response", "00 05 00 00 00 05 01 04 02 00", "burner条码数查询响应指令", "string", false);
+        // //burner.tcp.begin.command
         addDefaultConfig(configService, "burner.tcp.begin.command", "1b1b1b1b1b0a1b0a52030d579253ffab40656d732f5f7374617274ff01", "burner-开始指令", "string", false);
         //burner.tcp.end.command
         addDefaultConfig(configService, "burner.tcp.end.command", "1b1b1b1b1b0a1b0a52030d579253ffab4065656d732f5f656e64ff01", "burner-结束指令", "string", false);

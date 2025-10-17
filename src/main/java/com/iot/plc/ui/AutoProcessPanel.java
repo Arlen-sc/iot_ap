@@ -664,7 +664,7 @@ public class AutoProcessPanel extends BorderPane {
                     plcConnectionStatus.set("1个连接");
                     
                     // 启动其他服务
-                    getBurnerBarcodeCount();
+                    getPlcBarcodeCount();
                 } catch (Exception ex) {
                     log("[操作错误] 启动Server服务失败: " + ex.getMessage());
                     ex.printStackTrace();
@@ -1624,18 +1624,24 @@ public class AutoProcessPanel extends BorderPane {
         log("[PLC数据] " + value);
         //判断信息是否是：burner.qty.query.response配置的接收指令
         ConfigService configService = ConfigService.getInstance();
-        String receiveCommand = configService.getConfigValueByKey("burner.qty.query.response");
+        String receiveCommand = configService.getConfigValueByKey("plc.qty.query.response");
         if (value.contains(receiveCommand)) {
-            log("[烧录机] 收到数量响应: " + value+";前缀："+receiveCommand);
+            log("[PLC] 收到数量响应: " + value+";前缀："+receiveCommand);
             // 提取条码数量,把value中的receiveCommand替换为空字符串
             String qty = value.replaceAll(receiveCommand, "").trim();
-            log("[操作结果] 烧录机条码数量: " + qty);
+            log("[PLC] PLC条码数量: " + qty);
             //把条码数量更新到配置服务
             int intQty = Integer.parseInt(qty);
             expectedBarcodeCount.set(String.valueOf(intQty));
             expectedBarcodeCountInput.setText(String.valueOf(intQty));
             applyExpectedCount();//应用条码数量。
-            log("[配置更新] 已将预期条码数量更新为当前条码数量: " + intQty);
+            log("[PLC] 已将预期条码数量更新为当前条码数量: " + intQty);
+            //获取配置服务中的next指令
+            String nextCommand = configService.getConfigValueByKey("plc.tcp.next.command");
+            //发送next指令
+            NetworkService networkService = NetworkService.getInstance();
+            networkService.sendData(nextCommand,TcpServiceEnum.PLC);
+            log("[PLC] 已发送next指令: " + nextCommand);
         }
     }
 
@@ -1664,7 +1670,6 @@ public class AutoProcessPanel extends BorderPane {
             //把数据保存到当前页面烧录结果中，并保存到数据库
             boolean success = result == 1; // 假设1表示成功，0表示失败
             String message = success ? "烧录成功" : "烧录失败";
-            LocalDateTime now = LocalDateTime.now();
             
             // 保存到当前页面烧录结果中
             BurnResultData burnResultData = new BurnResultData(code, success, message);
@@ -1674,7 +1679,7 @@ public class AutoProcessPanel extends BorderPane {
             // 创建ProgramResult对象并保存到数据库
             try {
                 ProgramResult programResult = new ProgramResult(code, String.valueOf(result), deviceId);
-                programResult.setTime(now);
+                // 使用统一的时间戳
                 programResult.setRem(message);
                 
                 DatabaseManager.saveProgramResult(programResult);
@@ -1703,8 +1708,9 @@ public class AutoProcessPanel extends BorderPane {
             try {
                 //清空当前页面烧录结果
                 burnResultDataList.clear();
-               saveProgramResult(barcodes);
-               //给PLC发送指令：完成：plc.tcp.complete.command
+                barcodes=HexUtils.hexToString(barcodes);
+                saveProgramResult(barcodes);
+                //给PLC发送指令：完成：plc.tcp.complete.command
                 String completeCommand = configService.getConfigValueByKey("plc.tcp.complete.command");
                 log("[PLC]完成指令："+completeCommand);
                 networkService.sendData(completeCommand, TcpServiceEnum.PLC);
@@ -1753,12 +1759,19 @@ public class AutoProcessPanel extends BorderPane {
         log("[扫码机] 当前条码数量: " + barcodeDataList.size() + ", 预期条码数量: " + expectedBarcodeCount.get());
         
         // 调用方法获取烧录机条码数并比较
-        getBurnerBarcodeCount();
+        getPlcBarcodeCount();
         int burnerBarcodeCount = Integer.parseInt(expectedBarcodeCount.get());
         log("[扫码机] 烧录机条码数: " + burnerBarcodeCount);
         if (burnerBarcodeCount >= 0) {
             if (burnerBarcodeCount > currentBarcodes.size()) {
                 log("[扫码机] 条码数量不一致，继续处理");
+                //从配置服务获取plc-next.command
+                ConfigService configService = ConfigService.getInstance();
+                String plcNextCommand = configService.getConfigValueByKey("plc.tcp.next.command");
+                // 发送PLC-NEXT指令
+                NetworkService networkService = NetworkService.getInstance();
+                networkService.sendData(plcNextCommand, TcpServiceEnum.PLC);
+                log("[操作] 成功发送NEXT指令到PLC: " + plcNextCommand);
             } else if (burnerBarcodeCount == currentBarcodes.size()) {
                 log("[扫码机] 条码数量一致，执行PLC-OK指令");
                 //从配置服务获取PLC-OK指令
@@ -1844,17 +1857,17 @@ DE47"},{"site":"04","code":"4C5A0000DE48"}]格式。
      * 通过TCP发送指令并获取返回结果
      * @return 条码数量
      */
-    private void getBurnerBarcodeCount() {
+    private void getPlcBarcodeCount() {
         try {
             // 从配置服务获取发送指令
             ConfigService configService = ConfigService.getInstance();
-            String sendCommand = configService.getConfigValueByKey("burner.qty.query.command");
+            String sendCommand = configService.getConfigValueByKey("plc.qty.query.command");
             // 通过NetworkService发送指令到烧录机
             NetworkService networkService = NetworkService.getInstance();
-            networkService.sendData(sendCommand, TcpServiceEnum.BURNER);
-            log("[操作] 发送指令到烧录机: " + sendCommand);
+            networkService.sendData(sendCommand, TcpServiceEnum.PLC);
+            log("[操作] 发送指令到PLC: " + sendCommand);
         } catch (Exception e) {
-            log("[错误] 获取烧录机条码数失败: " + e.getMessage());
+            log("[错误] 获取PLC条码数失败: " + e.getMessage());
         }
     }
     /**

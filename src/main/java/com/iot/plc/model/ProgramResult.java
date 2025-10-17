@@ -1,5 +1,6 @@
 package com.iot.plc.model;
 
+import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -10,7 +11,7 @@ import java.time.format.DateTimeFormatter;
 public class ProgramResult {
     private String code;         // 条码
     private String result;       // 烧录状态
-    private LocalDateTime time;  // 时间
+    private Timestamp time;  // 时间
     private String rem;          // 备注
     private String deviceId;     // 设备ID
     
@@ -18,14 +19,14 @@ public class ProgramResult {
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     
     public ProgramResult() {
-        this.time = LocalDateTime.now();
+        this.time = new Timestamp(System.currentTimeMillis());
     }
     
     public ProgramResult(String code, String result, String deviceId) {
         this.code = code;
         this.result = result;
         this.deviceId = deviceId;
-        this.time = LocalDateTime.now();
+        this.time = new Timestamp(System.currentTimeMillis());
         this.rem = "";
     }
     
@@ -45,11 +46,11 @@ public class ProgramResult {
         this.result = result;
     }
     
-    public LocalDateTime getTime() {
+    public Timestamp getTime() {
         return time;
     }
     
-    public void setTime(LocalDateTime time) {
+    public void setTime(Timestamp time) {
         this.time = time;
     }
     
@@ -58,7 +59,7 @@ public class ProgramResult {
      * @return 格式化的时间字符串
      */
     public String getFormattedTime() {
-        return time != null ? FORMATTER.format(time) : "";
+        return time != null ? FORMATTER.format(time.toLocalDateTime()) : "";
     }
     
     public String getRem() {
