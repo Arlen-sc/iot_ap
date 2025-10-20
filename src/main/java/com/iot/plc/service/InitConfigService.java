@@ -116,6 +116,10 @@ public class InitConfigService {
         addDefaultConfig(configService, "plc.qty.query.command", "00 05 00 00 00 06 01 04 15 7D 00 01", "PLC条码数查询指令", "string", false);
         //plc.qty.query.response
         addDefaultConfig(configService, "plc.qty.query.response", "00 05 00 00 00 05 01 04 02 00", "PLC条码数查询响应指令", "string", false);
+        //plc.tcp.begin.command
+        addDefaultConfig(configService, "plc.tcp.begin.command", "00 05 00 00 00 06 01 06 15 7E 00 00", "PLC-开始指令", "string", false);
+        //plc.tcp.barcode.prefix
+        addDefaultConfig(configService, "plc.tcp.barcode.prefix", "00 05 00 00 00 06 01 06 15 7E 00 05", "PLC-条码前缀", "string", false);
         //burner.tcp.complete.command
         addDefaultConfig(configService, "burner.tcp.complete.command", "1b1b1b1b1b0a1b0a520205e2727cffab40656d732f5f6c65617665", "burner-完成指令", "string", false);
         // //burner.qty.query.command

@@ -1624,6 +1624,17 @@ public class AutoProcessPanel extends BorderPane {
         log("[PLC数据] " + value);
         //判断信息是否是：burner.qty.query.response配置的接收指令
         ConfigService configService = ConfigService.getInstance();
+        String plcBeginCommand = configService.getConfigValueByKey("plc.tcp.begin.command");
+        if(value.contains(plcBeginCommand)){
+            log("[PLC] 收到开始指令: " + value);
+            // 发送next指令
+            String nextCommand = configService.getConfigValueByKey("plc.tcp.next.command");
+            //发送next指令
+            NetworkService networkService = NetworkService.getInstance();
+            networkService.sendData(nextCommand,TcpServiceEnum.PLC);
+            log("[PLC] 已发送next指令: " + nextCommand);
+            return;
+        }
         String receiveCommand = configService.getConfigValueByKey("plc.qty.query.response");
         if (value.contains(receiveCommand)) {
             log("[PLC] 收到数量响应: " + value+";前缀："+receiveCommand);

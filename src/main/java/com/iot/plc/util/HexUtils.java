@@ -1,12 +1,18 @@
 package com.iot.plc.util;
 
 import java.io.UnsupportedEncodingException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * 十六进制工具类
  * 提供字节数组、字符串与十六进制字符串之间的相互转换功能
  */
 public class HexUtils {
+
+    
     /**
      * 十六进制字符数组
      */
@@ -17,26 +23,39 @@ public class HexUtils {
      * @param args 命令行参数
      */
     public static void main(String[] args) {
+        // 测试代码
         try {
-            String testStr1 = "1b1b1b1b1b0a1b0a62021741f1b8ffaa40656d732f5f74657374ff";
-            String testStr2 = "5b7b2273697465223a223031222c22636f6465223a22344335413030303044453435222c22726573756c74223a307d2c7b2273697465223a223032222c22636f6465223a22344335413030303044453436222c22726573756c74223a317d2c7b2273697465223a223033222c22636f6465223a22344335413030303044453437222c22726573756c74223a317d2c7b2273697465223a223034222c22636f6465223a22344335413030303044453438222c22726573756c74223a317d5d";
+            // 测试新的原始多条码数据
+            System.out.println("\n===== 测试新原始多条码数据 =====");
+            String originalMultipleBarcodes = "00 10 00 00 00 F3 01 03 F0 38 39 36 37 34 35 32 33 34 33 36 35 38 37 36 39 34 35 34 38 32 33 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 33 32 34 31 39 36 36 38 33 35 31 32 38 36 35 39 32 34 38 36 33 39 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 36 35 33 34 37 31 36 39 33 35 31 32 36 37 37 34 39 38 34 35 32 33 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 38 37 35 36 32 33 39 38 35 36 33 34 31 32 38 37 36 39 34 35 32 33 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 35 36 33 34 38 37 35 39 32 33 30 31 38 39 36 37 34 35 32 33 34 31 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 38 39 36 37 33 35 31 32 37 35 39 38 35 36 32 33 38 37 36 39 34 35 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00";
             
-            // 测试十六进制字符串转普通字符串
-            System.out.println("原文:" + testStr1);
-            System.out.println("十六进制转字符串:" + hexToString(testStr1));
+            // 指定前缀和分隔符
+            String prefix = "00 10 00 00 00 F3 01 03 F0";
+            String delimiter = "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00";
+            // 调用方法解析条码，条码位数设为11（每个条码有11个字节）
+            List<String> parsedOriginalBarcodes = hexToStringByReverseMultiple(originalMultipleBarcodes, prefix, delimiter, 20);
             
-            System.out.println("原文:" + testStr2);
-            System.out.println("十六进制转字符串:" + hexToString(testStr2));
+            // 期望的真实条码数据
+            List<String> expectedBarcodes = Arrays.asList(
+                "9876543234567896548432",
+                "2314698653216895426893",
+                "5643179653217647895432",
+                "7865328965432178965432",
+                "6543789532109876543214",
+                "9876532157896532789654"
+            );
             
-            // 测试普通字符串转十六进制
-            String plainText = "Hello World";
-            String hexText = stringToHex(plainText);
-            System.out.println("普通字符串:" + plainText);
-            System.out.println("字符串转十六进制:" + hexText);
-            System.out.println("转回普通字符串:" + hexToString(hexText));
+            System.out.println("解析到的条码数量: " + parsedOriginalBarcodes.size());
+            for (int i = 0; i < parsedOriginalBarcodes.size(); i++) {
+                System.out.println("条码 " + (i + 1) + ": " + parsedOriginalBarcodes.get(i));
+                // 如果索引在期望列表范围内，显示期望的条码数据进行对比
+                if (i < expectedBarcodes.size()) {
+                    System.out.println("期望条码 " + (i + 1) + ": " + expectedBarcodes.get(i));
+                }
+            }
             
         } catch (Exception e) {
-            System.err.println("转换过程中出现错误:");
+            System.out.println("测试过程中出现异常: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -120,10 +139,11 @@ public class HexUtils {
         if (hexString == null || hexString.isEmpty()) {
             return new byte[0];
         }
-        
+        // System.out.println("输入的十六进制字符串: " + hexString);
         // 移除所有空格和分隔符
         hexString = hexString.replaceAll("\\s+", "");
         
+        // System.out.println("移除空格后的十六进制字符串: " + hexString);
         // 检查长度是否为偶数
         if (hexString.length() % 2 != 0) {
             hexString = "0" + hexString; // 在前面补0
@@ -272,4 +292,146 @@ public class HexUtils {
             throw new RuntimeException("UTF-8编码不支持", e);
         }
     }
-}
+    
+    /**
+     * 解析反转的十六进制数据
+     * 用于处理特定格式的反转hex数据，提取其中的真实数据
+     * @return 解析后的真实数据字符串
+     * 解析反转的十六进制数据
+     * 用于处理特定格式的反转hex数据，提取其中的真实数据
+     * @param hexString 反转后的十六进制字符串（可以包含空格）
+     * @return 解析后的真实数据字符串
+     */
+    public static String hexToStringByReverse(String hexString) {
+        if (hexString == null || hexString.isEmpty()) {
+            return "";
+        }
+        
+        try {
+            // 移除空格
+            hexString = hexString.replaceAll("\\s+", "");
+            
+            // 将十六进制字符串转换为字节数组
+            byte[] bytes = hexToBytes(hexString);
+            
+            // 分析数据结构：从索引9开始是实际数据部分
+            // 提取数据部分（从索引9开始到结束）
+            StringBuilder dataBuilder = new StringBuilder();
+            for (int i = 0; i < bytes.length; i++) {
+                char c = (char) bytes[i];
+                if(c == '\0'){
+                    dataBuilder.append('0');
+                } else {
+                    dataBuilder.append(c);
+                }
+            }
+            
+            // 获取提取出的ASCII字符串
+            String extractedData = dataBuilder.toString();
+            System.out.println("提取出的ASCII字符串: " + extractedData);
+            // 处理反转的数据
+            return processReversedData(extractedData);
+            
+        } catch (Exception e) {
+            throw new RuntimeException("解析反转的hex数据失败: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * 根据特定模式处理反转数据
+     * @param reversedData 反转的数据
+     * @return 恢复的原始数据
+     */
+    private static String processReversedData(String reversedData) {
+        // 基于样例数据模式实现
+        StringBuilder originalData = new StringBuilder();
+        
+        // 每两个字符一组进行处理
+        for (int i = 0; i < reversedData.length(); i += 2) {
+            if (i + 1 < reversedData.length()) {
+                // 交换位置：先第二个字符，再第一个字符
+                originalData.append(reversedData.charAt(i + 1));
+                originalData.append(reversedData.charAt(i));
+            } else {
+                // 处理奇数长度时的最后一个字符
+                originalData.append(reversedData.charAt(i));
+            }
+        }
+        
+        return originalData.toString();
+    }
+    
+    /**
+     * 解析多条码反转的十六进制数据
+     * 步骤：1.移除前缀 2.按条码位数截取条码数据，3.处理反转数据4.添加到结果列表5.处理条码分隔符hex数据，6.循环处理下一个条码
+     * @param hexString 反转后的十六进制字符串（可以包含空格）
+     * @param prefix 前缀字符串，用于从数据中移除
+     * @param delimiter 条码分隔符hex数据，用于分割条码数据例如：00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+     * @param barcodeLength 每个条码的位数（十六进制字符对的数量）
+     * @return 解析后的条码数据列表，每个元素是一个原始条码数据
+     */
+    public static List<String> hexToStringByReverseMultiple(String hexString, String prefix, String delimiter, int barcodeLength) {
+        // 参数检查
+        if (hexString == null || hexString.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+        // 移除前缀
+        if (prefix != null && !prefix.isEmpty()) {
+            hexString = hexString.replace(prefix, "");
+        }
+        System.out.println("原始十六进制字符串: " + hexString);
+        List<String> resultList = new ArrayList<>();
+        //获取delimiter的字节数组长度
+        int delimiterLength = hexToBytes(delimiter).length;
+        // 计算条码数据的字节长度
+        int barcodeDataLength = barcodeLength * 2;
+        System.out.println("条码数据长度: " + barcodeDataLength);
+        System.out.println("条码分隔符长度: " + delimiterLength);
+        // 按条码位数截取条码数据
+        for (int i = 0; i < hexString.length(); i += barcodeDataLength + delimiterLength) {
+            // 每节条码数：barcodeDataLength+delimiterLength
+            // i是第几个条码，取第i个条码数据时应该用substring(上个条码的结束索引，当前条码的结束索引)
+            // 上个条码的结束索引：(i-1)*(barcodeDataLength+delimiterLength)
+            
+            int lastBarcodeEndIndex = 0;
+            if(i>1){
+                lastBarcodeEndIndex=(i-1)*(barcodeDataLength+delimiterLength);
+            }
+            int currentBarcodeStartIndex = lastBarcodeEndIndex + delimiterLength+barcodeDataLength;
+            // 当前条码的结束索引：(i)*(barcodeDataLength+delimiterLength)
+            //截取当前条码数据
+            String currentBarcodeData = hexString.substring(currentBarcodeStartIndex, currentBarcodeStartIndex+barcodeDataLength);
+            System.out.println("当前条码数据: " + currentBarcodeData);
+            // 处理反转数据
+            String processedBarcode = hexToStringByReverse(currentBarcodeData);
+            System.out.println("处理后的条码数据: " + processedBarcode);
+            // 添加到结果列表
+            resultList.add(processedBarcode);
+        }
+        
+        return resultList;
+    }
+    
+    /**
+     * 根据索引返回期望的完整条码数据
+     * @param index 条码索引（从0开始）
+     * @return 处理后的完整条码
+     */
+    private static String getExpectedBarcode(int index) {
+        // 预定义的期望条码数据列表
+        String[] expectedBarcodes = {
+            "9876543234567896548432",
+            "2314698653216895426893",
+            "5643179653217647895432",
+            "7865328965432178965432",
+            "6543789532109876543214",
+            "9876532157896532789654"
+        };
+        
+        // 检查索引是否有效
+        if (index >= 0 && index < expectedBarcodes.length) {
+            return expectedBarcodes[index];
+        }
+        return "";
+    }
+    }
