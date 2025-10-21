@@ -22,22 +22,16 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 import com.iot.plc.enumx.TcpServiceEnum;
 import java.sql.SQLException;
-import java.util.UUID;
-import javafx.beans.binding.Bindings;
 import javafx.scene.layout.GridPane;
 
 import com.alibaba.fastjson2.JSONArray;
-import com.alibaba.fastjson2.JSONException;
 import com.alibaba.fastjson2.JSONObject;
-import com.iot.plc.config.NetworkConfig;
 import com.iot.plc.database.DatabaseManager;
 import com.iot.plc.listener.NetworkListener;
-import com.iot.plc.service.EmsService;
 import com.iot.plc.service.ConfigService;
 import com.iot.plc.service.SerialPortService;
 import com.iot.plc.service.NetworkService;
@@ -45,12 +39,10 @@ import com.iot.plc.service.LogService;
 import com.iot.plc.model.BarcodeData;
 import com.iot.plc.model.BurnResultData;
 import com.iot.plc.model.ConfigItem;
-import com.iot.plc.model.DeviceResult;
 import com.iot.plc.model.ProgramResult;
 import com.iot.plc.logger.Logger;
 import com.iot.plc.ui.config.NetworkConfigPanel;
 import com.iot.plc.util.HexUtils;
-import com.iot.plc.ui.SimulatorEvents;
 
 /**
  * 自动处理面板
@@ -256,6 +248,9 @@ public class AutoProcessPanel extends BorderPane {
         }
     }
 
+    /**
+     * 初始化用户界面
+     */
     private void initUI() {
         // 创建菜单栏
         MenuBar menuBar = createMenuBar();
@@ -412,16 +407,6 @@ public class AutoProcessPanel extends BorderPane {
             }
         }
     }
-
-    // 上位机配置相关常量
-    private static final String CONFIG_KEY_UPPER_COMPUTER_IP = "upper_computer_ip";
-    private static final String CONFIG_KEY_UPPER_COMPUTER_PORT = "upper_computer_port";
-    private static final String DEFAULT_UPPER_COMPUTER_IP = "127.0.0.1";
-    private static final String DEFAULT_UPPER_COMPUTER_PORT = "8080";
-
-    // EMS配置相关常量
-    private static final String CONFIG_KEY_EMS_URL = "ems_api_url";
-    private static final String DEFAULT_EMS_URL = "http://localhost:8080/api";
 
     // 流程控制开关
     private ToggleButton processControlToggle;
@@ -679,7 +664,7 @@ public class AutoProcessPanel extends BorderPane {
                     plcConnectionStatus.set("1个连接");
                     
                     // 启动其他服务
-                    getPlcBarcodeCount();
+                    pushPlcBarcodeCountCommand();
                 } catch (Exception ex) {
                     log("[操作错误] 启动Server服务失败: " + ex.getMessage());
                     ex.printStackTrace();
@@ -811,8 +796,6 @@ public class AutoProcessPanel extends BorderPane {
         return statusBox;
     }
 
-
-
     /**
      * 应用用户输入的预期条码数量
      */
@@ -881,7 +864,9 @@ public class AutoProcessPanel extends BorderPane {
         }
     }
 
-    /** */
+    /**
+     * 创建条码输入区域
+     */
     private VBox createScanBox() {
         VBox scanBox = new VBox(5);
         scanBox.setPadding(new Insets(5));
@@ -898,20 +883,6 @@ public class AutoProcessPanel extends BorderPane {
 
         confirmBarcodeButton = new Button("确认输入");
         confirmBarcodeButton.setOnAction(e -> handleManualBarcodeInput());
-
-        // // 串口选择和监控
-        // Label comPortLabel = new Label("COM端口：");
-        // comPortComboBox = new ComboBox<>();
-        // comPortComboBox.getItems().addAll("COM1", "COM2", "COM3", "COM4", "COM5");
-        // comPortComboBox.setValue("COM1");
-
-        // startComMonitorButton = new Button("开始监控");
-        // startComMonitorButton.setOnAction(e -> startComPortMonitoring());
-
-        // stopComMonitorButton = new Button("停止监控");
-        // stopComMonitorButton.setOnAction(e -> stopComPortMonitoring());
-        // stopComMonitorButton.setDisable(true);
-
         // 串口换成tcp。
         inputBox.getChildren().addAll(
                 scanLabel, barcodeInputField, confirmBarcodeButton
@@ -924,6 +895,11 @@ public class AutoProcessPanel extends BorderPane {
         return scanBox;
     }
 
+    /**
+     * 创建状态标签
+     * @param statusProperty 状态属性
+     * @return 状态标签
+     */
     private Label createStatusLabel(StringProperty statusProperty) {
         Label label = new Label();
         label.textProperty().bind(statusProperty);
@@ -992,6 +968,10 @@ public class AutoProcessPanel extends BorderPane {
         }
     }
 
+    /**
+     * 创建条码数据表格
+     * @return 条码数据表格
+     */
     private TableView<BarcodeData> createBarcodeTable() {
         TableView<BarcodeData> table = new TableView<>();
         table.setItems(barcodeDataList);
@@ -1021,6 +1001,10 @@ public class AutoProcessPanel extends BorderPane {
         return table;
     }
 
+    /**
+     * 创建烧录结果表格
+     * @return 烧录结果表格
+     */
     private TableView<BurnResultData> createBurnResultTable() {
         TableView<BurnResultData> table = new TableView<>();
         table.setItems(burnResultDataList);
@@ -1043,6 +1027,10 @@ public class AutoProcessPanel extends BorderPane {
         return table;
     }
 
+    /**
+     * 启动状态更新线程
+     * 定期更新条码数据表格中的条码数量
+     */
     private void startStatusUpdateThread() {
         // 启动状态更新线程
         new Thread(() -> {
@@ -1061,148 +1049,6 @@ public class AutoProcessPanel extends BorderPane {
     }
 
     /**
-     * 显示上位机配置对话框
-     */
-    private void showUpperComputerConfigDialog() {
-        // 创建对话框
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("编辑上位机配置");
-        dialog.setHeaderText("请输入上位机的IP地址和端口号");
-
-        // 设置对话框按钮
-        ButtonType saveButtonType = new ButtonType("保存", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
-
-        // 创建表单布局
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(20, 150, 10, 10));
-
-        // 创建输入字段
-        TextField ipTextField = new TextField();
-        TextField portTextField = new TextField();
-
-        // 从配置服务加载现有配置
-        try {
-            String savedIp = ConfigService.getInstance().getConfigValueByKey(CONFIG_KEY_UPPER_COMPUTER_IP);
-            String savedPort = ConfigService.getInstance().getConfigValueByKey(CONFIG_KEY_UPPER_COMPUTER_PORT);
-
-            ipTextField.setText(savedIp != null ? savedIp : DEFAULT_UPPER_COMPUTER_IP);
-            portTextField.setText(savedPort != null ? savedPort : DEFAULT_UPPER_COMPUTER_PORT);
-        } catch (Exception e) {
-            log("[配置加载错误] 从上位机配置服务加载配置失败: " + e.getMessage());
-            // 使用默认值
-            ipTextField.setText(DEFAULT_UPPER_COMPUTER_IP);
-            portTextField.setText(DEFAULT_UPPER_COMPUTER_PORT);
-        }
-
-        // 添加标签和输入字段到网格
-        grid.add(new Label("IP地址:"), 0, 0);
-        grid.add(ipTextField, 1, 0);
-        grid.add(new Label("端口号:"), 0, 1);
-        grid.add(portTextField, 1, 1);
-
-        // 设置对话框内容
-        dialog.getDialogPane().setContent(grid);
-
-        // 验证输入
-        Button saveButton = (Button) dialog.getDialogPane().lookupButton(saveButtonType);
-        saveButton.disableProperty().bind(
-                Bindings.createBooleanBinding(() -> {
-                    String ip = ipTextField.getText().trim();
-                    String port = portTextField.getText().trim();
-
-                    // 简单的IP地址验证
-                    boolean validIp = !ip.isEmpty() && ip.matches("^((25[0-5]|(2[0-4]|1\\d|[1-9]|)\\d)\\.?\\b){4}$");
-                    // 简单的端口验证
-                    boolean validPort = !port.isEmpty();
-                    try {
-                        if (validPort) {
-                            int portNum = Integer.parseInt(port);
-                            validPort = portNum > 0 && portNum <= 65535;
-                        }
-                    } catch (NumberFormatException e) {
-                        validPort = false;
-                    }
-
-                    return !validIp || !validPort;
-                }, ipTextField.textProperty(), portTextField.textProperty()));
-
-        // 显示对话框并处理结果
-        dialog.showAndWait().ifPresent(result -> {
-            if (result == saveButtonType) {
-                String ip = ipTextField.getText().trim();
-                String port = portTextField.getText().trim();
-
-                try {
-                    // 保存IP地址配置
-                    saveUpperComputerConfig(CONFIG_KEY_UPPER_COMPUTER_IP, ip, "上位机IP地址", "STRING");
-                    // 保存端口配置
-                    saveUpperComputerConfig(CONFIG_KEY_UPPER_COMPUTER_PORT, port, "上位机端口号", "INTEGER");
-
-                    log("[配置更新] 成功保存上位机配置 - IP: " + ip + ", 端口: " + port);
-                    showSuccessMessage("配置保存成功");
-                } catch (Exception e) {
-                    log("[配置保存错误] 保存上位机配置失败: " + e.getMessage());
-                    e.printStackTrace();
-                    showSuccessMessage("配置保存失败: " + e.getMessage());
-                }
-            }
-        });
-    }
-
-    /**
-     * 保存上位机配置到配置服务
-     */
-    private void saveUpperComputerConfig(String configKey, String configValue, String description, String dataType) {
-        try {
-            // 先检查配置项是否已存在
-            String existingValue = ConfigService.getInstance().getConfigValueByKey(configKey);
-            ConfigItem configItem = null;
-
-            if (existingValue != null) {
-                // 如果已存在，获取现有配置项
-                try {
-                    List<ConfigItem> allConfigs = DatabaseManager.getAllConfigItems();
-                    for (ConfigItem item : allConfigs) {
-                        if (item.getConfigKey().equals(configKey)) {
-                            configItem = item;
-                            configItem.setConfigValue(configValue); // 更新值
-                            break;
-                        }
-                    }
-                } catch (SQLException e) {
-                    // 如果获取现有配置项失败，创建新的配置项
-                    log("[配置检查] 获取现有配置项失败: " + e.getMessage() + ", 将创建新配置项");
-                    configItem = new ConfigItem(
-                            configKey,
-                            configValue,
-                            description,
-                            dataType,
-                            true // 设置为必填配置项
-                    );
-                }
-            } else {
-                // 如果不存在，创建新配置项
-                configItem = new ConfigItem(
-                        configKey,
-                        configValue,
-                        description,
-                        dataType,
-                        true // 设置为必填配置项
-                );
-            }
-
-            ConfigService.getInstance().saveConfigItem(configItem);
-            log("[配置保存] 已保存上位机配置 - 键: " + configKey + ", 值: " + configValue);
-        } catch (Exception e) {
-            log("[配置保存错误] 保存上位机配置失败: " + e.getMessage());
-            throw new RuntimeException("保存上位机配置失败", e);
-        }
-    }
-
-    /**
      * 显示成功消息
      */
     private void showSuccessMessage(String message) {
@@ -1214,128 +1060,6 @@ public class AutoProcessPanel extends BorderPane {
             alert.showAndWait();
         });
     }
-
-    /**
-     * 显示EMS配置对话框
-     */
-    private void showEmsConfigDialog() {
-        // 创建对话框
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("编辑EMS配置");
-        dialog.setHeaderText("请输入EMS系统的API URL");
-
-        // 设置对话框按钮
-        ButtonType saveButtonType = new ButtonType("保存", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
-
-        // 创建表单布局
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(20, 150, 10, 10));
-
-        // 创建URL输入字段
-        TextField urlTextField = new TextField();
-
-        // 从配置服务加载现有配置
-        try {
-            String savedUrl = ConfigService.getInstance().getConfigValueByKey(CONFIG_KEY_EMS_URL);
-            urlTextField.setText(savedUrl != null ? savedUrl : DEFAULT_EMS_URL);
-        } catch (Exception e) {
-            log("[配置加载错误] 从EMS配置服务加载配置失败: " + e.getMessage());
-            // 使用默认值
-            urlTextField.setText(DEFAULT_EMS_URL);
-        }
-
-        // 添加标签和输入字段到网格
-        grid.add(new Label("EMS API URL:"), 0, 0);
-        grid.add(urlTextField, 1, 0);
-
-        // 设置对话框内容
-        dialog.getDialogPane().setContent(grid);
-
-        // 验证输入
-        Button saveButton = (Button) dialog.getDialogPane().lookupButton(saveButtonType);
-        saveButton.disableProperty().bind(
-                Bindings.createBooleanBinding(() -> {
-                    String url = urlTextField.getText().trim();
-
-                    // 简化的URL验证
-                    boolean validUrl = !url.isEmpty() && (url.startsWith("http://") || url.startsWith("https://"));
-
-                    return !validUrl;
-                }, urlTextField.textProperty()));
-
-        // 显示对话框并处理结果
-        dialog.showAndWait().ifPresent(result -> {
-            if (result == saveButtonType) {
-                String url = urlTextField.getText().trim();
-
-                try {
-                    // 保存EMS URL配置
-                    saveEmsConfig(CONFIG_KEY_EMS_URL, url, "EMS系统API地址", "STRING");
-
-                    log("[配置更新] 成功保存EMS配置 - URL: " + url);
-                    showSuccessMessage("EMS配置保存成功");
-                } catch (Exception e) {
-                    log("[配置保存错误] 保存EMS配置失败: " + e.getMessage());
-                    e.printStackTrace();
-                    showSuccessMessage("EMS配置保存失败: " + e.getMessage());
-                }
-            }
-        });
-    }
-
-    /**
-     * 保存EMS配置到配置服务
-     */
-    private void saveEmsConfig(String configKey, String configValue, String description, String dataType) {
-        try {
-            // 先检查配置项是否已存在
-            String existingValue = ConfigService.getInstance().getConfigValueByKey(configKey);
-            ConfigItem configItem = null;
-
-            if (existingValue != null) {
-                // 如果已存在，获取现有配置项
-                try {
-                    List<ConfigItem> allConfigs = DatabaseManager.getAllConfigItems();
-                    for (ConfigItem item : allConfigs) {
-                        if (item.getConfigKey().equals(configKey)) {
-                            configItem = item;
-                            configItem.setConfigValue(configValue); // 更新值
-                            break;
-                        }
-                    }
-                } catch (SQLException e) {
-                    // 如果获取现有配置项失败，创建新的配置项
-                    log("[配置检查] 获取现有EMS配置项失败: " + e.getMessage() + ", 将创建新配置项");
-                    configItem = new ConfigItem(
-                            configKey,
-                            configValue,
-                            description,
-                            dataType,
-                            true // 设置为必填配置项
-                    );
-                }
-            } else {
-                // 如果不存在，创建新配置项
-                configItem = new ConfigItem(
-                        configKey,
-                        configValue,
-                        description,
-                        dataType,
-                        true // 设置为必填配置项
-                );
-            }
-
-            ConfigService.getInstance().saveConfigItem(configItem);
-            log("[配置保存] 已保存EMS配置 - 键: " + configKey + ", 值: " + configValue);
-        } catch (Exception e) {
-            log("[配置保存错误] 保存EMS配置失败: " + e.getMessage());
-            throw new RuntimeException("保存EMS配置失败", e);
-        }
-    }
-
     /**
      * 显示网络配置对话框的通用方法
      * @param serviceType 服务类型（烧录机、扫码机、PLC）
@@ -1381,30 +1105,6 @@ public class AutoProcessPanel extends BorderPane {
             "TCP服务"
         );
     }
-
-    // /**
-    //  * 显示扫码机配置对话框
-    //  */
-    // private void showScannerConfigDialog() {
-    //     showNetworkConfigDialog(
-    //         TcpServiceEnum.SCANNER,
-    //         "编辑扫码机配置",
-    //         "配置扫码机的网络参数",
-    //         "扫码机"
-    //     );
-    // }
-    
-    // /**
-    //  * 显示PLC配置对话框
-    //  */
-    // private void showPlcConfigDialog() {
-    //     showNetworkConfigDialog(
-    //         TcpServiceEnum.PLC,
-    //         "编辑PLC配置",
-    //         "配置PLC的网络参数",
-    //         "PLC"
-    //     );
-    // }
 
     /**
      * 显示三方软件配置对话框
@@ -1461,9 +1161,9 @@ public class AutoProcessPanel extends BorderPane {
                 String args = argsTextField.getText().trim();
 
                 try {
-                    // 保存三方软件配置
-                    saveConfig(CONFIG_KEY_THIRD_PARTY_PATH, path, "三方软件路径", "STRING");
-                    saveConfig(CONFIG_KEY_THIRD_PARTY_ARGS, args, "三方软件启动参数", "STRING");
+                      // 保存三方软件配置
+                      ConfigService.getInstance().saveConfig(CONFIG_KEY_THIRD_PARTY_PATH, path, "三方软件路径", "STRING");
+                      ConfigService.getInstance().saveConfig(CONFIG_KEY_THIRD_PARTY_ARGS, args, "三方软件启动参数", "STRING");
 
                     log("[配置更新] 成功保存三方软件配置 - 路径: " + path + ", 参数: " + args);
                     showSuccessMessage("三方软件配置保存成功");
@@ -1476,63 +1176,18 @@ public class AutoProcessPanel extends BorderPane {
         });
     }
 
+    // 配置保存方法已移至ConfigService类
+    // 直接调用ConfigService.getInstance().saveConfig(...)
+
     /**
-     * 通用的配置保存方法
+     * 启动流程
      */
-    private void saveConfig(String configKey, String configValue, String description, String dataType) {
-        try {
-            // 先检查配置项是否已存在
-            String existingValue = ConfigService.getInstance().getConfigValueByKey(configKey);
-            ConfigItem configItem = null;
-
-            if (existingValue != null) {
-                // 如果已存在，获取现有配置项
-                try {
-                    List<ConfigItem> allConfigs = DatabaseManager.getAllConfigItems();
-                    for (ConfigItem item : allConfigs) {
-                        if (item.getConfigKey().equals(configKey)) {
-                            configItem = item;
-                            configItem.setConfigValue(configValue); // 更新值
-                            break;
-                        }
-                    }
-                } catch (SQLException e) {
-                    // 如果获取现有配置项失败，创建新的配置项
-                    log("[配置检查] 获取现有配置项失败: " + e.getMessage() + ", 将创建新配置项");
-                    configItem = new ConfigItem(
-                            configKey,
-                            configValue,
-                            description,
-                            dataType,
-                            false // 一般配置项设为非必填
-                    );
-                }
-            } else {
-                // 如果不存在，创建新配置项
-                configItem = new ConfigItem(
-                        configKey,
-                        configValue,
-                        description,
-                        dataType,
-                        false // 一般配置项设为非必填
-                );
-            }
-
-            ConfigService.getInstance().saveConfigItem(configItem);
-            log("[配置保存] 已保存配置 - 键: " + configKey + ", 值: " + configValue);
-        } catch (Exception e) {
-            log("[配置保存错误] 保存配置失败: " + e.getMessage());
-            throw new RuntimeException("保存配置失败", e);
-        }
-    }
-
     private void startProcess() {
         log("[操作] 用户点击了'启动流程'按钮");
         if (processStarted.get()) {
             log("[操作结果] 流程已经启动，请先重置流程");
             return;
         }
-
         // 启动流程
         processStarted.set(true);
         barcodeVerified.set(false);
@@ -1545,6 +1200,9 @@ public class AutoProcessPanel extends BorderPane {
         log("[流程状态] 当前流程状态：运行中");
     }
 
+    /**
+     * 重置流程
+     */
     private void resetProcess() {
         log("[操作] 用户点击了'重置流程'按钮");
         // 不设置processStarted为false，保持流程运行状态
@@ -1560,7 +1218,9 @@ public class AutoProcessPanel extends BorderPane {
         log("[操作结果] 流程已重置，保持运行状态");
         log("[流程状态] 当前流程状态：运行中，重置了所有流程标志");
     }
-
+    /**
+     * 清空条码缓存
+     */
     private void clearBarcodes() {
         log("[操作] 用户点击了'清空条码'按钮");
         barcodeDataList.clear();
@@ -1569,20 +1229,6 @@ public class AutoProcessPanel extends BorderPane {
         log("[操作结果] 条码缓存已清空");
         log("[流程状态] 当前流程状态保持不变");
     }
-
-    // // 烧录机配置相关常量
-    // private static final String CONFIG_KEY_BURNER_IP = "burner.ip";
-    // private static final String CONFIG_KEY_BURNER_PORT = "burner.port";
-    // private static final String CONFIG_KEY_BURNER_TIMEOUT = "burner.timeout";
-    // private static final String DEFAULT_BURNER_IP = "127.0.0.1";
-    // private static final String DEFAULT_BURNER_PORT = "8888";
-    // private static final String DEFAULT_BURNER_TIMEOUT = "30000";
-
-    // // 扫码机配置相关常量
-    // private static final String CONFIG_KEY_SCANNER_COM_PORTS = "scanner.com_ports";
-    // private static final String CONFIG_KEY_SCANNER_BAUD_RATE = "scanner.baud_rate";
-    // private static final String DEFAULT_SCANNER_COM_PORTS = "COM1,COM2,COM3";
-    // private static final String DEFAULT_SCANNER_BAUD_RATE = "9600";
 
     // 三方软件配置相关常量
     private static final String CONFIG_KEY_THIRD_PARTY_PATH = "third_party.path";
@@ -1631,6 +1277,11 @@ public class AutoProcessPanel extends BorderPane {
         return menuBar;
     }
 
+    /**
+     * 添加条码数据到列表
+     * @param barcode 条码数据
+     * @throws SQLException 数据库操作异常
+     */
     protected void addBarcodeData(String barcode) throws SQLException {
         // 创建BarcodeData对象并添加到barcodeDataList
         BarcodeData barcodeData = new BarcodeData(deviceId, barcode, "PLC_PORT");
@@ -1640,38 +1291,42 @@ public class AutoProcessPanel extends BorderPane {
         barcodeDataList.add(barcodeData);
         currentBarcodes.add(barcode);
     }
+
     /**
-     * 处理PLC数据
-     * @param value
+     * 处理条码数据
+     * @param hexString 条码数据:从plc获取数据，数据格式：hex。
      */
-    protected void plcProcessBarcodeData(String value) {
-        log("[plcProcessBarcodeData] " + value);
-        //判断信息是否是：burner.qty.query.response配置的接收指令
-        ConfigService configService = ConfigService.getInstance();
-        // plc.tcp.barcode.prefix
-        // 条码指令前缀，用于判断是否是条码指令
-        String plcBarcodePrefix = configService.getConfigValueByKey("plc.tcp.barcode.prefix");
-        if(value.contains(plcBarcodePrefix)){
-            //获取条码分割符
-            String barcodeDelimiter = configService.getConfigValueByKey("plc.tcp.barcode.delimiter");
+    protected void doBarcodeProcess(String hexString){
+        log("[doBarcodeProcess] 条码数据: " + hexString);
+        try {
+            ConfigService configService =ConfigService.getInstance();
+            // 条码指令前缀，用于判断是否是条码指令
+            String plcBarcodePrefix = configService.getConfigValueByKey("plc.tcp.barcode.prefix");
+             //获取条码分割符
+            String barcodeDelimiter = ConfigService.getInstance().getConfigValueByKey("plc.tcp.barcode.delimiter");
+            //获取条码字节长度
             int barcodeLength = Integer.parseInt(configService.getConfigValueByKey("plc.tcp.barcode.length"));
-            log("[PLC] 收到条码指令: " + value);
             // 提取条码数据,把value中的plcBarcodePrefix替换为空字符串
-            List<String> barcodes = HexUtils.hexToStringByReverseMultiple(value, plcBarcodePrefix, barcodeDelimiter, barcodeLength);
-            log("[PLC] 提取到条码数据: " + barcodes.size());
+            List<String> barcodes = HexUtils.hexToStringByReverseMultiple(hexString, plcBarcodePrefix, barcodeDelimiter, barcodeLength);
+            log("[doBarcodeProcess] 获取到条码数量: " + barcodes.size());
             // 保存条码数据到列表
             for (String barcode : barcodes) {
-                try {
-                    addBarcodeData(barcode);
-                    log("[PLC] 获取条码数据: " + barcode);
-                } catch (SQLException e) {
-                    log("[PLC] 保存条码数据到数据库失败: " + barcode);
-                }
+                addBarcodeData(barcode);
+                log("[doBarcodeProcess] 获取条码数据: " + barcode);
             }
-            log("[PLC] 已保存条码数据到列表: " + barcodes.size());
-            return;
+        } catch (Exception e) {
+            log("[doBarcodeProcess] 保存条码数据到数据库失败: " + e.getMessage());
         }
-        //判断信息是否是：plc.tcp.begin.command配置的接收指令
+    }
+    /**
+     * 处理PLC开始指令
+     * 1.判断信息是否是：plc.tcp.begin.command配置的接收指令
+     * 2.如果是，发送next指令
+     * @param value
+     */
+    protected void doPlcBeginCommand(String value){
+        ConfigService configService = ConfigService.getInstance();
+       //判断信息是否是：plc.tcp.begin.command配置的接收指令
         String plcBeginCommand = configService.getConfigValueByKey("plc.tcp.begin.command");
         if(value.contains(plcBeginCommand)){
             log("[PLC] 收到开始指令: " + value);
@@ -1683,6 +1338,16 @@ public class AutoProcessPanel extends BorderPane {
             log("[PLC] 已发送next指令: " + nextCommand);
             return;
         }
+    }
+
+    /**
+     * 处理PLC数量响应
+     * 1.判断信息是否是：plc.qty.query.response配置的接收指令
+     * 2.如果是，提取条码数量，更新到配置服务，应用条码数量，发送next指令
+     * @param value
+     */
+    protected void doPlcQtyResponse(String value){
+        ConfigService configService = ConfigService.getInstance();
         String receiveCommand = configService.getConfigValueByKey("plc.qty.query.response");
         if (value.contains(receiveCommand)) {
             log("[PLC] 收到数量响应: " + value+";前缀："+receiveCommand);
@@ -1704,13 +1369,19 @@ public class AutoProcessPanel extends BorderPane {
             return;
         }
     }
-
-    public static void main(String[] args) {
-        AutoProcessPanel autoProcessPanel = new AutoProcessPanel();
-        String str="1B1B1B1B1B0A1B0A62021741F1B8FFAA40656D732F5F74657374FF5B7B2273697465223A223031222C22636F6465223A22344335413030303044453435222C22726573756C74223A307D2C7B2273697465223A223032222C22636F6465223A22344335413030303044453436222C22726573756C74223A317D2C7B2273697465223A223033222C22636F6465223A22344335413030303044453437222C22726573756C74223A317D2C7B2273697465223A223034222C22636F6465223A22344335413030303044453438222C22726573756C74223A317D5D";
-        autoProcessPanel.burnerProcessBarcodeData(str);
-        
+    /**
+     * 处理PLC数据
+     * @param value
+     */
+    protected void plcProcessBarcodeData(String value) {
+        // 处理条码数据
+        doBarcodeProcess(value);
+        // 处理PLC开始指令
+        doPlcBeginCommand(value);
+        // 处理PLC数量响应  
+        doPlcQtyResponse(value);
     }
+
     /**
      * 保存烧录结果到数据库
      * @param barcodes
@@ -1794,39 +1465,28 @@ public class AutoProcessPanel extends BorderPane {
             log("[扫码机] 请先启动流程");
             return;
         }
-
         if (barcode == null || barcode.isEmpty()) {
             log("[扫码机] 无效的数据");
             return;
         }
-        
         //判断是否是
         // 防重逻辑：检查当前条码是否已存在
         if (currentBarcodes.contains(barcode)) {
             log("[扫码机] 条码已存在，跳过处理: " + barcode);
             return;
         }
-
-        // 创建条码数据对象
-        BarcodeData barcodeData = new BarcodeData(deviceId, barcode, "NETWORK_PORT");
-        // 保存条码数据到数据库
-        DatabaseManager.saveBarcodeData(barcodeData);
-        // 添加到缓存列表
-        barcodeDataList.add(barcodeData);
-        currentBarcodes.add(barcode);
-
+        addBarcodeData(barcode);
         log("[扫码机] 条码: " + barcode);
         log("[扫码机] 当前条码数量: " + barcodeDataList.size() + ", 预期条码数量: " + expectedBarcodeCount.get());
-        
+        ConfigService configService = ConfigService.getInstance();
         // 调用方法获取烧录机条码数并比较
-        getPlcBarcodeCount();
+        pushPlcBarcodeCountCommand();
         int burnerBarcodeCount = Integer.parseInt(expectedBarcodeCount.get());
         log("[扫码机] 烧录机条码数: " + burnerBarcodeCount);
         if (burnerBarcodeCount >= 0) {
             if (burnerBarcodeCount > currentBarcodes.size()) {
                 log("[扫码机] 条码数量不一致，继续处理");
                 //从配置服务获取plc-next.command
-                ConfigService configService = ConfigService.getInstance();
                 String plcNextCommand = configService.getConfigValueByKey("plc.tcp.next.command");
                 // 发送PLC-NEXT指令
                 NetworkService networkService = NetworkService.getInstance();
@@ -1835,23 +1495,15 @@ public class AutoProcessPanel extends BorderPane {
             } else if (burnerBarcodeCount == currentBarcodes.size()) {
                 log("[扫码机] 条码数量一致，执行PLC-OK指令");
                 //从配置服务获取PLC-OK指令
-                ConfigService configService = ConfigService.getInstance();
                 String plcOkCommand = configService.getConfigValueByKey("plc.tcp.ok.command");
                 // 发送PLC-OK指令
                 NetworkService networkService = NetworkService.getInstance();
                 networkService.sendData(plcOkCommand, TcpServiceEnum.PLC);
                 log("[操作] 成功发送OK指令到PLC: " + plcOkCommand);
                 sendBarcodeToBurner();
-                // 重置当前条码列表
-                // currentBarcodes.clear();
-                //清空条码数据
-                // barcodeDataList.clear();
-                // //清空当前条码列表
-                // currentBarcodes.clear();
             }else{
                 log("[错误] 数量错误: " + burnerBarcodeCount+",当前条码数量: "+currentBarcodes.size());
                 //发送PLC-ERROR指令
-                ConfigService configService = ConfigService.getInstance();
                 String plcErrorCommand = configService.getConfigValueByKey("plc.tcp.error.command");
                 // 发送PLC-ERROR指令
                 NetworkService networkService = NetworkService.getInstance();
@@ -1913,11 +1565,11 @@ DE47"},{"site":"04","code":"4C5A0000DE48"}]格式。
     }
 
     /**
-     * 获取烧录机条码数
+     * 推送PLC条码数查询指令
      * 通过TCP发送指令并获取返回结果
      * @return 条码数量
      */
-    private void getPlcBarcodeCount() {
+    private void pushPlcBarcodeCountCommand() {
         try {
             // 从配置服务获取发送指令
             ConfigService configService = ConfigService.getInstance();
@@ -1945,80 +1597,7 @@ DE47"},{"site":"04","code":"4C5A0000DE48"}]格式。
         // 清除输入框
         barcodeInputField.clear();
     }
-    /**
-     * 模拟PLC开始指令处理
-     */
-    private void startComPortMonitoring() {
-        log("[操作] 用户点击了'开始监控'按钮");
-        if (!processStarted.get()) {
-            log("[操作结果] 请先启动流程");
-            return;
-        }
-
-        if (isMonitoringComPort) {
-            log("[操作结果] 串口监控已经在运行中");
-            return;
-        }
-
-        String selectedPort = comPortComboBox.getValue();
-        isMonitoringComPort = true;
-        startComMonitorButton.setDisable(true);
-        stopComMonitorButton.setDisable(false);
-        comPortComboBox.setDisable(true);
-
-        log("[操作结果] 开始监控串口: " + selectedPort);
-
-        // 执行COM口有效性检查
-        log("[COM口检查] 正在验证串口有效性...");
-        try {
-            // 使用默认参数初始化串口进行验证
-            int baudRate = 9600;
-            int dataBits = 8;
-            int stopBits = 1;
-            int parity = 0; // 无校验
-
-            // 检查串口是否有效
-            boolean portValid = serialPortService.initSerialPort("monitor_device", selectedPort,
-                    baudRate, dataBits, stopBits, parity);
-
-            if (portValid) {
-                log("[COM口检查] 串口" + selectedPort + " 验证成功");
-                serialPortStatus.set("已连接");
-                log("[提示] 串口监控已启动，请使用'模拟COM口数据'按钮手动输入数据");
-            } else {
-                log("[COM口检查] 串口" + selectedPort + " 验证失败");
-                serialPortStatus.set("连接失败");
-                log("[提示] 请检查串口连接或尝试其他COM端口");
-            }
-
-            // 验证完成后关闭测试连接（实际监控由事件监听器处理）
-            serialPortService.closeSerialPort("monitor_device");
-        } catch (Exception e) {
-            log("[COM口检查] 验证过程发生错误: " + e.getMessage());
-            serialPortStatus.set("检查错误");
-        }
-    }
-
-    /**
-     * 模拟PLC开始指令处理
-     */
-    private void stopComPortMonitoring() {
-        log("[操作] 用户点击了'停止监控'按钮");
-        if (!isMonitoringComPort) {
-            log("[操作结果] 串口监控未运行");
-            return;
-        }
-
-        isMonitoringComPort = false;
-        startComMonitorButton.setDisable(false);
-        stopComMonitorButton.setDisable(true);
-        comPortComboBox.setDisable(false);
-
-        log("[操作结果] 停止监控串口: " + comPortComboBox.getValue());
-    }
-
-    // 模拟PLC产品数量处理方法已移至SimulatorEvents类中
-
+   
     /**
      * 记录日志到UI和控制台
      * @param message 日志消息
@@ -2054,23 +1633,23 @@ DE47"},{"site":"04","code":"4C5A0000DE48"}]格式。
      */
     private void initializeSimulatorEvents() {
         this.simulatorEvents = new SimulatorEvents(
-            // 设备ID供应商
+            // 设备ID
             () -> this.deviceId,
-            // 条码数据列表供应商
+            // 条码数据列表
             () -> this.barcodeDataList,
-            // 当前条码列表供应商
+            // 当前条码列表
             () -> this.currentBarcodes,
             // COM端口供应商
             () -> this.comPortComboBox != null ? this.comPortComboBox.getValue() : null,
-            // 预期条码数量供应商
+            // 预期条码数量
             () -> this.expectedBarcodeCount.get(),
-            // 流程启动状态供应商
+            // 流程启动状态
             () -> this.processStarted.get(),
-            // 条码验证状态供应商
+            // 条码验证状态
             () -> this.barcodeVerified.get(),
             // 重置流程运行器
             () -> this.resetProcess(),
-            // 实际条码数量供应商
+            // 实际条码数量
             () -> this.actualBarcodeCount.get(),
             // 实际条码数量设置器
             (value) -> this.actualBarcodeCount.set(value),

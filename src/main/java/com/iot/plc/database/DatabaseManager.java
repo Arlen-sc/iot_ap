@@ -1,4 +1,4 @@
-package com.iot.plc.database;
+﻿package com.iot.plc.database;
 
 import com.iot.plc.model.*;
 import com.iot.plc.model.LogItem;
@@ -740,7 +740,7 @@ public class DatabaseManager {
         return configItem;
     }
     
-    public static void deleteConfigItem(int configId) throws SQLException {
+    public static boolean deleteConfigItem(int configId) throws SQLException {
         String sql = "DELETE FROM config_items WHERE id = ?";
         
         try (Connection conn = getConnection();
@@ -752,7 +752,8 @@ public class DatabaseManager {
         } catch (SQLException e) {
                 logger.error("删除配置项失败: ID=" + configId + " - " + e.getMessage(), e);
                 throw e;
-            }
+        }
+        return true;
     }
     
     /**

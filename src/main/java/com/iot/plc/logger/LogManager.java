@@ -47,7 +47,7 @@ public class LogManager {
                 // 如果配置不存在，设置默认值并保存到数据库
                 String defaultDays = "0"; // 默认永不清除日志
                 shouldLog = true;
-                configService.saveConfigItem(LOG_RETENTION_PERIOD_KEY, defaultDays, "日志保留天数，0表示永不清除日志");
+                configService.saveConfigItem(LOG_RETENTION_PERIOD_KEY, defaultDays, "日志保留天数，0表示永不清除日志", "string");
                 Logger.getInstance().info("日志记录配置不存在，已创建默认配置: 永不清除日志");
             }
         } catch (Exception e) {
