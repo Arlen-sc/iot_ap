@@ -89,11 +89,8 @@ public class InitConfigService {
         // 系统基本配置
         addDefaultConfig(configService, "system.version", "1.0.0", "系统版本号", "string", false);
         addDefaultConfig(configService, "system.debug", "true", "调试模式开关", "boolean", false);
-        
-        // PLC连接配置
-        addDefaultConfig(configService, "plc.ip", "127.0.0.1", "PLC设备IP地址", "string", false);
-        addDefaultConfig(configService, "plc.port", "502", "PLC设备端口号", "string", false);
-        
+           //device.id
+        addDefaultConfig(configService, "device.id", "PLC_DEVICE_001", "设备ID", "string", false);
         // 网络服务配置
         addDefaultConfig(configService, "network.timeout", "30000", "网络连接超时时间(毫秒)", "string", false);
         addDefaultConfig(configService, "network.retry.count", "3", "网络连接重试次数", "string", false);
@@ -119,7 +116,13 @@ public class InitConfigService {
         //plc.tcp.begin.command
         addDefaultConfig(configService, "plc.tcp.begin.command", "00 05 00 00 00 06 01 06 15 7E 00 00", "PLC-开始指令", "string", false);
         //plc.tcp.barcode.prefix
-        addDefaultConfig(configService, "plc.tcp.barcode.prefix", "00 05 00 00 00 06 01 06 15 7E 00 05", "PLC-条码前缀", "string", false);
+        addDefaultConfig(configService, "plc.tcp.barcode.prefix", "00 10 00 00 00 F3 01 03 F0", "PLC-条码前缀", "string", false);
+        // plc.tcp.barcode.delimiter
+        addDefaultConfig(configService, "plc.tcp.barcode.delimiter", "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", "PLC-条码分隔符", "string", false);
+        // plc.tcp.barcode.length
+        addDefaultConfig(configService, "plc.tcp.barcode.length", "20", "PLC-条码长度", "string", false);
+        
+        
         //burner.tcp.complete.command
         addDefaultConfig(configService, "burner.tcp.complete.command", "1b1b1b1b1b0a1b0a520205e2727cffab40656d732f5f6c65617665", "burner-完成指令", "string", false);
         // //burner.qty.query.command
@@ -132,8 +135,7 @@ public class InitConfigService {
         addDefaultConfig(configService, "burner.tcp.end.command", "1b1b1b1b1b0a1b0a52030d579253ffab4065656d732f5f656e64ff01", "burner-结束指令", "string", false);
         // burner.tcp.json.prefix
         addDefaultConfig(configService, "burner.tcp.json.prefix", "1b1b1b1b1b0a1b0a62021741f1b8ffaa40656d732f5f74657374ff" , "burner-条码json前缀", "string", false);
-        //device.id
-        addDefaultConfig(configService, "device.id", "PLC_DEVICE_001", "设备ID", "string", false);
+
         // 网络配置面板相关配置项
         // 使用TcpServiceEnum遍历添加，提高扩展性
         for (TcpServiceEnum serviceEnum : TcpServiceEnum.values()) {

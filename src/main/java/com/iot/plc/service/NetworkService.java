@@ -564,9 +564,6 @@ public class NetworkService {
     /**
      * 通知数据接收（字节数组格式）
      */
-    private void notifyDataReceived(byte[] data, int length, TcpServiceEnum serviceType) {
-
-    }
     private void notifyDataReceived(byte[] data, TcpServiceEnum serviceType) {
         // 通知所有监听器（只使用新版带服务类型的方法）
         for (NetworkListener networkListener : listeners) {

@@ -50,6 +50,7 @@ import com.iot.plc.model.ProgramResult;
 import com.iot.plc.logger.Logger;
 import com.iot.plc.ui.config.NetworkConfigPanel;
 import com.iot.plc.util.HexUtils;
+import com.iot.plc.ui.SimulatorEvents;
 
 /**
  * 自动处理面板
@@ -122,6 +123,9 @@ public class AutoProcessPanel extends BorderPane {
 
     // 随机数生成器
     private Random random = new Random();
+    
+    // 模拟事件管理器
+    private SimulatorEvents simulatorEvents;
 
     /**
      * 自动处理面板构造函数
@@ -141,6 +145,9 @@ public class AutoProcessPanel extends BorderPane {
         
         // 添加LogService监听器，确保Logger的日志能够显示在UI中
         setupLogListener();
+        
+        // 初始化模拟事件管理器
+        initializeSimulatorEvents();
     }
     
     /**
@@ -311,19 +318,18 @@ public class AutoProcessPanel extends BorderPane {
         simulateScanButton = new Button("模拟扫描");
         simulatePlcCountButton = new Button("模拟PLC数量");
         simulatePlcStartButton = new Button("模拟PLC开始");
-        Button simulateComDataButton = new Button("模拟COM口数据");
+        // Button simulateComDataButton = new Button("模拟COM口数据");
 
         resetProcessButton.setOnAction(e -> resetProcess());
         clearBarcodesButton.setOnAction(e -> clearBarcodes());
-        simulateScanButton.setOnAction(e -> simulateBarcodeScan());
-        simulatePlcCountButton.setOnAction(e -> simulatePlcProductCount());
-        // simulatePlcStartButton.setOnAction(e -> simulatePlcStartCommand());
+        simulateScanButton.setOnAction(e -> simulatorEvents.simulateBarcodeScan());
+        simulatePlcCountButton.setOnAction(e -> simulatorEvents.simulatePlcProductCount());
+        simulatePlcStartButton.setOnAction(e -> simulatorEvents.simulatePlcStartCommand());
         // simulateComDataButton.setOnAction(e -> showComDataInputDialog());
 
         buttonFlowPane.getChildren().addAll(
                 resetProcessButton, clearBarcodesButton,
-                simulateScanButton, simulatePlcCountButton, simulatePlcStartButton,
-                simulateComDataButton);
+                simulateScanButton, simulatePlcCountButton, simulatePlcStartButton);
 
         // 日志区域（左侧）
         logArea = new TextArea();
@@ -450,18 +456,27 @@ public class AutoProcessPanel extends BorderPane {
             // 实现字节数组版本的方法，用于处理原始hex数据
             @Override
             public void onDataReceived(byte[] data, TcpServiceEnum serviceType) {
-
+                
                 // 可以在这里直接处理原始字节数据，无需转换
                 //此处需要特殊处理，只能用字符串。
                 if(serviceType == TcpServiceEnum.BURNER) {
                     String hexString=HexUtils.bytesToHex(data);
-                    logger.info("autoProcessPanel 收到TCP数据-byte: " + hexString);
+                    logger.info("autoProcessPanel-burner 收到TCP数据-byte: " + hexString);
                     // 扫码机服务，保存条码数据
                     try {
                         // 调用封装的条码处理方法
                         burnerProcessBarcodeData(hexString);
                     } catch (Exception e) {
                         logger.error("烧录机条码数据处理失败: " + e.getMessage());
+                    }
+                }else if(serviceType == TcpServiceEnum.PLC) {
+                    String hexString=HexUtils.bytesToHex(data,false);
+                    logger.info("autoProcessPanel-plc 收到TCP数据-byte: " + hexString);
+                    // PLC服务，记录接收到的数据
+                    try {
+                        plcProcessBarcodeData(hexString);
+                    } catch (Exception e) {
+                        logger.error("PLC信息处理失败: " + e.getMessage());
                     }
                 }
             }
@@ -489,12 +504,12 @@ public class AutoProcessPanel extends BorderPane {
                         //     logger.error("烧录机信息处理失败: " + e.getMessage());
                         // }
                     } else if (serviceType == TcpServiceEnum.PLC) {
-                        // PLC服务，记录接收到的数据
-                        try {
-                            plcProcessBarcodeData(data.trim());
-                        } catch (Exception e) {
-                            logger.error("PLC信息处理失败: " + e.getMessage());
-                        }
+                        // // PLC服务，记录接收到的数据
+                        // try {
+                        //     plcProcessBarcodeData(data.trim());
+                        // } catch (Exception e) {
+                        //     logger.error("PLC信息处理失败: " + e.getMessage());
+                        // }
                     }
                 }
                 
@@ -1616,14 +1631,47 @@ public class AutoProcessPanel extends BorderPane {
         return menuBar;
     }
 
+    protected void addBarcodeData(String barcode) throws SQLException {
+        // 创建BarcodeData对象并添加到barcodeDataList
+        BarcodeData barcodeData = new BarcodeData(deviceId, barcode, "PLC_PORT");
+        //插入数据库
+        // 保存条码数据到数据库
+        DatabaseManager.saveBarcodeData(barcodeData);
+        barcodeDataList.add(barcodeData);
+        currentBarcodes.add(barcode);
+    }
     /**
      * 处理PLC数据
      * @param value
      */
     protected void plcProcessBarcodeData(String value) {
-        log("[PLC数据] " + value);
+        log("[plcProcessBarcodeData] " + value);
         //判断信息是否是：burner.qty.query.response配置的接收指令
         ConfigService configService = ConfigService.getInstance();
+        // plc.tcp.barcode.prefix
+        // 条码指令前缀，用于判断是否是条码指令
+        String plcBarcodePrefix = configService.getConfigValueByKey("plc.tcp.barcode.prefix");
+        if(value.contains(plcBarcodePrefix)){
+            //获取条码分割符
+            String barcodeDelimiter = configService.getConfigValueByKey("plc.tcp.barcode.delimiter");
+            int barcodeLength = Integer.parseInt(configService.getConfigValueByKey("plc.tcp.barcode.length"));
+            log("[PLC] 收到条码指令: " + value);
+            // 提取条码数据,把value中的plcBarcodePrefix替换为空字符串
+            List<String> barcodes = HexUtils.hexToStringByReverseMultiple(value, plcBarcodePrefix, barcodeDelimiter, barcodeLength);
+            log("[PLC] 提取到条码数据: " + barcodes.size());
+            // 保存条码数据到列表
+            for (String barcode : barcodes) {
+                try {
+                    addBarcodeData(barcode);
+                    log("[PLC] 获取条码数据: " + barcode);
+                } catch (SQLException e) {
+                    log("[PLC] 保存条码数据到数据库失败: " + barcode);
+                }
+            }
+            log("[PLC] 已保存条码数据到列表: " + barcodes.size());
+            return;
+        }
+        //判断信息是否是：plc.tcp.begin.command配置的接收指令
         String plcBeginCommand = configService.getConfigValueByKey("plc.tcp.begin.command");
         if(value.contains(plcBeginCommand)){
             log("[PLC] 收到开始指令: " + value);
@@ -1653,6 +1701,7 @@ public class AutoProcessPanel extends BorderPane {
             NetworkService networkService = NetworkService.getInstance();
             networkService.sendData(nextCommand,TcpServiceEnum.PLC);
             log("[PLC] 已发送next指令: " + nextCommand);
+            return;
         }
     }
 
@@ -1762,7 +1811,7 @@ public class AutoProcessPanel extends BorderPane {
         BarcodeData barcodeData = new BarcodeData(deviceId, barcode, "NETWORK_PORT");
         // 保存条码数据到数据库
         DatabaseManager.saveBarcodeData(barcodeData);
-        // 添加到缓存
+        // 添加到缓存列表
         barcodeDataList.add(barcodeData);
         currentBarcodes.add(barcode);
 
@@ -1968,44 +2017,7 @@ DE47"},{"site":"04","code":"4C5A0000DE48"}]格式。
         log("[操作结果] 停止监控串口: " + comPortComboBox.getValue());
     }
 
-        /**
-         * 模拟PLC产品数量处理
-         */
-    private void simulatePlcProductCount() {
-        log("[操作] 用户点击了'模拟PLC数量'按钮");
-        if (!processStarted.get() || barcodeVerified.get()) {
-            log("[操作结果] 请先启动流程并扫描条码，或条码已经验证通过");
-            return;
-        }
-
-        // 使用用户设置的预期数量
-        int actualCount = barcodeDataList.size();
-        String expectedCountStr = expectedBarcodeCount.get();
-
-        try {
-            int count = Integer.parseInt(expectedCountStr);
-            log("[PLC数据] 接收到PLC产品数量: " + count);
-
-            // 验证条码数量
-            if (actualCount == count) {
-                barcodeVerified.set(true);
-                currentStatus.set("验证通过");
-                log("[验证结果] 条码数量验证通过: " + actualCount + " = " + count);
-                waitingForStartCommand.set(true);
-                log("[流程状态] 等待PLC开始指令...");
-            } else {
-                log("[验证结果] 错误: 条码数量不匹配! 实际: " + actualCount + " 预期: " + count);
-                currentStatus.set("异常");
-                log("[流程状态] 进入异常状态，准备重置流程...");
-                resetProcess(); // 重置但保持流程运行状态
-            }
-        } catch (NumberFormatException e) {
-            log("[验证结果] 预期条码数量格式错误，请输入有效的数字");
-            currentStatus.set("异常");
-            log("[流程状态] 进入异常状态，准备重置流程...");
-            resetProcess(); // 重置但保持流程运行状态
-        }
-    }
+    // 模拟PLC产品数量处理方法已移至SimulatorEvents类中
 
     /**
      * 记录日志到UI和控制台
@@ -2038,27 +2050,39 @@ DE47"},{"site":"04","code":"4C5A0000DE48"}]格式。
     private boolean isInitialized = false;
 
     /**
-     * 模拟扫描条码
+     * 初始化模拟事件管理器
      */
-    private void simulateBarcodeScan() {
-        log("[操作] 用户点击了'模拟扫描'按钮");
-        if (!processStarted.get()) {
-            log("[操作结果] 请先启动流程");
-            return;
-        }
-
-        // 生成随机条码
-        String randomBarcode = "BAR-" + System.currentTimeMillis() + "-" + random.nextInt(1000);
-
-        // 创建条码数据对象
-        BarcodeData barcodeData = new BarcodeData(deviceId, randomBarcode, comPortComboBox.getValue());
-
-        // 添加到缓存
-        barcodeDataList.add(barcodeData);
-        currentBarcodes.add(randomBarcode);
-
-        log("[操作结果] 扫描到条码: " + randomBarcode);
-        log("[数据状态] 当前条码数量: " + barcodeDataList.size() + ", 预期条码数量: " + expectedBarcodeCount.get());
+    private void initializeSimulatorEvents() {
+        this.simulatorEvents = new SimulatorEvents(
+            // 设备ID供应商
+            () -> this.deviceId,
+            // 条码数据列表供应商
+            () -> this.barcodeDataList,
+            // 当前条码列表供应商
+            () -> this.currentBarcodes,
+            // COM端口供应商
+            () -> this.comPortComboBox != null ? this.comPortComboBox.getValue() : null,
+            // 预期条码数量供应商
+            () -> this.expectedBarcodeCount.get(),
+            // 流程启动状态供应商
+            () -> this.processStarted.get(),
+            // 条码验证状态供应商
+            () -> this.barcodeVerified.get(),
+            // 重置流程运行器
+            () -> this.resetProcess(),
+            // 实际条码数量供应商
+            () -> this.actualBarcodeCount.get(),
+            // 实际条码数量设置器
+            (value) -> this.actualBarcodeCount.set(value),
+            // 当前状态设置器
+            (value) -> this.currentStatus.set(value),
+            // 条码验证状态设置器
+            (value) -> this.barcodeVerified.set(value),
+            // 等待开始命令状态设置器
+            (value) -> this.waitingForStartCommand.set(value),
+            // 日志记录器
+            (message) -> this.log(message)
+        );
     }
 
 }
