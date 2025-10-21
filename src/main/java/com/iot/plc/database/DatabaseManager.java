@@ -1,4 +1,4 @@
-﻿package com.iot.plc.database;
+package com.iot.plc.database;
 
 import com.iot.plc.model.*;
 import com.iot.plc.model.LogItem;
@@ -22,8 +22,8 @@ public class DatabaseManager {
             Class.forName("org.sqlite.JDBC");
             initializeDatabase();
         } catch (Exception e) {
-                logger.error("JDBC驱动加载失败: " + e.getMessage(), e);
-            }
+            logger.error("JDBC驱动加载失败: " + e.getMessage(), e);
+        }
     }
     
     public static void initializeDatabase() {
@@ -584,12 +584,6 @@ public class DatabaseManager {
         }
     }
     
-
-    
-
-    
-
-    
     public static List<ProgramResult> getProgramResultsByBatchId(String batchId) throws SQLException {
         List<ProgramResult> results = new ArrayList<>();
         String sql = "SELECT * FROM program_result WHERE batch_id = ? ORDER BY program_time DESC";
@@ -642,9 +636,9 @@ public class DatabaseManager {
             logger.debug("获取所有烧录结果成功，共" + results.size() + "条记录");
             return results;
         } catch (SQLException e) {
-                logger.error("获取所有烧录结果失败: " + e.getMessage(), e);
-                throw e;
-            }
+            logger.error("获取所有烧录结果失败: " + e.getMessage(), e);
+            throw e;
+        }
     }
     
     // ConfigItem相关操作
@@ -750,8 +744,8 @@ public class DatabaseManager {
             pstmt.executeUpdate();
             logger.debug("删除配置项成功: ID=" + configId);
         } catch (SQLException e) {
-                logger.error("删除配置项失败: ID=" + configId + " - " + e.getMessage(), e);
-                throw e;
+            logger.error("删除配置项失败: ID=" + configId + " - " + e.getMessage(), e);
+            throw e;
         }
         return true;
     }
@@ -953,8 +947,6 @@ public class DatabaseManager {
         return taskList;
     }
     
-
-    
     /**
      * 添加任务信息
      * @param taskInfo 任务信息对象
@@ -1085,5 +1077,4 @@ public class DatabaseManager {
             throw e;
         }
     }
-    
 }

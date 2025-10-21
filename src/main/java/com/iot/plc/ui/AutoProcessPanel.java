@@ -1,6 +1,7 @@
 package com.iot.plc.ui;
 
 import javafx.application.Platform;
+import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
 import javafx.collections.FXCollections;
@@ -27,6 +28,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import com.iot.plc.enumx.TcpServiceEnum;
 import java.sql.SQLException;
 import javafx.scene.layout.GridPane;
+
+import com.iot.plc.ui.AutoProcessPanelService.BurnerService;
+import com.iot.plc.ui.AutoProcessPanelService.PlcService;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -99,9 +103,6 @@ public class AutoProcessPanel extends BorderPane {
     private TextField barcodeInputField;
     private Button confirmBarcodeButton;
     private ComboBox<String> comPortComboBox;
-    private Button startComMonitorButton;
-    private Button stopComMonitorButton;
-    private boolean isMonitoringComPort = false;
     private TextField expectedBarcodeCountInput;
     private Button applyExpectedCountButton;
 
@@ -113,9 +114,6 @@ public class AutoProcessPanel extends BorderPane {
     private AtomicBoolean waitingForProgramResult = new AtomicBoolean(false);
     private AtomicBoolean processCompleted = new AtomicBoolean(false);
 
-    // 随机数生成器
-    private Random random = new Random();
-    
     // 模拟事件管理器
     private SimulatorEvents simulatorEvents;
 
@@ -310,16 +308,27 @@ public class AutoProcessPanel extends BorderPane {
 
         resetProcessButton = new Button("重置流程");
         clearBarcodesButton = new Button("清空条码");
-        simulateScanButton = new Button("模拟扫描");
+        simulateScanButton = new Button("模拟条码");
         simulatePlcCountButton = new Button("模拟PLC数量");
         simulatePlcStartButton = new Button("模拟PLC开始");
         // Button simulateComDataButton = new Button("模拟COM口数据");
 
         resetProcessButton.setOnAction(e -> resetProcess());
         clearBarcodesButton.setOnAction(e -> clearBarcodes());
-        simulateScanButton.setOnAction(e -> simulatorEvents.simulateBarcodeScan());
+        simulateScanButton.setOnAction(e -> {
+            // 生成随机条码
+            String randomBarcode = "BAR-" + System.currentTimeMillis() + "-" + new Random().nextInt(1000);
+            // 设置到条码输入框
+            barcodeInputField.setText(randomBarcode);
+            // 模拟点击确认输入按钮
+            confirmBarcodeButton.fire();
+            log("[操作] 用户点击了'模拟条码'按钮，生成条码: " + randomBarcode);
+        });
         simulatePlcCountButton.setOnAction(e -> simulatorEvents.simulatePlcProductCount());
-        simulatePlcStartButton.setOnAction(e -> simulatorEvents.simulatePlcStartCommand());
+        simulatePlcStartButton.setOnAction(e ->{
+            //模拟条码发送给烧录机
+            sendBarcodeJsonToBurner();
+        });
         // simulateComDataButton.setOnAction(e -> showComDataInputDialog());
 
         buttonFlowPane.getChildren().addAll(
@@ -459,7 +468,7 @@ public class AutoProcessPanel extends BorderPane {
                     logger.info("autoProcessPanel-plc 收到TCP数据-byte: " + hexString);
                     // PLC服务，记录接收到的数据
                     try {
-                        plcProcessBarcodeData(hexString);
+                        plcProcessData(hexString);
                     } catch (Exception e) {
                         logger.error("PLC信息处理失败: " + e.getMessage());
                     }
@@ -491,7 +500,7 @@ public class AutoProcessPanel extends BorderPane {
                     } else if (serviceType == TcpServiceEnum.PLC) {
                         // // PLC服务，记录接收到的数据
                         // try {
-                        //     plcProcessBarcodeData(data.trim());
+                        //     plcProcessData(data.trim());
                         // } catch (Exception e) {
                         //     logger.error("PLC信息处理失败: " + e.getMessage());
                         // }
@@ -977,6 +986,15 @@ public class AutoProcessPanel extends BorderPane {
         table.setItems(barcodeDataList);
         table.setPrefHeight(200); // 设置表格高度
 
+        // 添加序号列
+        TableColumn<BarcodeData, Integer> indexColumn = new TableColumn<>("序号");
+        indexColumn.setCellValueFactory(cellData -> {
+            // 获取当前行在数据列表中的索引并加1
+            int index = barcodeDataList.indexOf(cellData.getValue()) + 1;
+            return new SimpleIntegerProperty(index).asObject();
+        });
+        indexColumn.setPrefWidth(80);
+
         TableColumn<BarcodeData, String> deviceIdColumn = new TableColumn<>("设备ID");
         deviceIdColumn.setCellValueFactory(cellData -> new SimpleStringProperty(cellData.getValue().getDeviceId()));
         deviceIdColumn.setPrefWidth(200);
@@ -995,7 +1013,8 @@ public class AutoProcessPanel extends BorderPane {
         // portNameColumn.setCellValueFactory(cellData -> new SimpleStringProperty(cellData.getValue().getPortName()));
         // portNameColumn.setPrefWidth(100);
 
-        table.getColumns().addAll(deviceIdColumn, barcodeColumn, scanTimeColumn);
+        // 将序号列添加为第一列
+        table.getColumns().addAll(indexColumn, deviceIdColumn, barcodeColumn, scanTimeColumn);
         // , portNameColumn
         // );
         return table;
@@ -1293,94 +1312,100 @@ public class AutoProcessPanel extends BorderPane {
     }
 
     /**
-     * 处理条码数据
-     * @param hexString 条码数据:从plc获取数据，数据格式：hex。
-     */
-    protected void doBarcodeProcess(String hexString){
-        log("[doBarcodeProcess] 条码数据: " + hexString);
-        try {
-            ConfigService configService =ConfigService.getInstance();
-            // 条码指令前缀，用于判断是否是条码指令
-            String plcBarcodePrefix = configService.getConfigValueByKey("plc.tcp.barcode.prefix");
-             //获取条码分割符
-            String barcodeDelimiter = ConfigService.getInstance().getConfigValueByKey("plc.tcp.barcode.delimiter");
-            //获取条码字节长度
-            int barcodeLength = Integer.parseInt(configService.getConfigValueByKey("plc.tcp.barcode.length"));
-            // 提取条码数据,把value中的plcBarcodePrefix替换为空字符串
-            List<String> barcodes = HexUtils.hexToStringByReverseMultiple(hexString, plcBarcodePrefix, barcodeDelimiter, barcodeLength);
-            log("[doBarcodeProcess] 获取到条码数量: " + barcodes.size());
-            // 保存条码数据到列表
-            for (String barcode : barcodes) {
-                addBarcodeData(barcode);
-                log("[doBarcodeProcess] 获取条码数据: " + barcode);
-            }
-        } catch (Exception e) {
-            log("[doBarcodeProcess] 保存条码数据到数据库失败: " + e.getMessage());
-        }
-    }
-    /**
-     * 处理PLC开始指令
-     * 1.判断信息是否是：plc.tcp.begin.command配置的接收指令
-     * 2.如果是，发送next指令
+     * 是的，改逻辑： 1.轮询发送指令给plc：请求条码数据  
+     * 2.plc满足6个条码后，一次性发送给我，
+     * 3.预设条码值与当前条码判断，如果ng就发送ng指令给plc（条码数量大于或者小于都属于NG），
+     * 4. 发送条码数据给烧录机，
+     * 5.烧录机返回数据，
+     * 6给烧录机指令，
+     * 7给plc指令
      * @param value
      */
-    protected void doPlcBeginCommand(String value){
-        ConfigService configService = ConfigService.getInstance();
-       //判断信息是否是：plc.tcp.begin.command配置的接收指令
-        String plcBeginCommand = configService.getConfigValueByKey("plc.tcp.begin.command");
-        if(value.contains(plcBeginCommand)){
-            log("[PLC] 收到开始指令: " + value);
-            // 发送next指令
-            String nextCommand = configService.getConfigValueByKey("plc.tcp.next.command");
-            //发送next指令
-            NetworkService networkService = NetworkService.getInstance();
-            networkService.sendData(nextCommand,TcpServiceEnum.PLC);
-            log("[PLC] 已发送next指令: " + nextCommand);
-            return;
-        }
-    }
-
-    /**
-     * 处理PLC数量响应
-     * 1.判断信息是否是：plc.qty.query.response配置的接收指令
-     * 2.如果是，提取条码数量，更新到配置服务，应用条码数量，发送next指令
-     * @param value
-     */
-    protected void doPlcQtyResponse(String value){
-        ConfigService configService = ConfigService.getInstance();
-        String receiveCommand = configService.getConfigValueByKey("plc.qty.query.response");
-        if (value.contains(receiveCommand)) {
-            log("[PLC] 收到数量响应: " + value+";前缀："+receiveCommand);
-            // 提取条码数量,把value中的receiveCommand替换为空字符串
-            String qty = value.replaceAll(receiveCommand, "").trim();
-            log("[PLC] PLC条码数量: " + qty);
-            //把条码数量更新到配置服务
-            int intQty = Integer.parseInt(qty);
-            expectedBarcodeCount.set(String.valueOf(intQty));
-            expectedBarcodeCountInput.setText(String.valueOf(intQty));
-            applyExpectedCount();//应用条码数量。
-            log("[PLC] 已将预期条码数量更新为当前条码数量: " + intQty);
-            //获取配置服务中的next指令
-            String nextCommand = configService.getConfigValueByKey("plc.tcp.next.command");
-            //发送next指令
-            NetworkService networkService = NetworkService.getInstance();
-            networkService.sendData(nextCommand,TcpServiceEnum.PLC);
-            log("[PLC] 已发送next指令: " + nextCommand);
-            return;
-        }
-    }
     /**
      * 处理PLC数据
      * @param value
      */
-    protected void plcProcessBarcodeData(String value) {
-        // 处理条码数据
-        doBarcodeProcess(value);
+    protected void plcProcessData(String value) {
         // 处理PLC开始指令
-        doPlcBeginCommand(value);
+        // 调用PlcService处理PLC开始指令
+        PlcService.getInstance().doPlcBeginCommand(value);
+        
         // 处理PLC数量响应  
-        doPlcQtyResponse(value);
+        int qty = PlcService.getInstance().doPlcQtyResponse(value);
+        if(qty > 0){
+            expectedBarcodeCount.set(String.valueOf(qty));
+            expectedBarcodeCountInput.setText(String.valueOf(qty));
+            applyExpectedCount();//应用条码数量。
+        }
+
+        // 处理条码数据//现在此方法值需要处理一个数据：解析条码：
+        // 调用PlcService处理条码数据
+        List<String> barcodes = PlcService.getInstance().doBarcodeProcess(value);
+        if(barcodes != null && !barcodes.isEmpty()){
+            for (String barcode : barcodes) {
+                try {
+                    addBarcodeData(barcode);
+                } catch (SQLException e) {
+                    log("[处理条码] 添加条码数据失败: " + e.getMessage());
+                    return;
+                }
+            }
+            // 发送条码数据给烧录机
+            sendBarcodeJsonToBurner();
+            return;
+        }
+        
     }
+
+    /**
+     * 发送条码数据给烧录机
+     */
+    protected void sendBarcodeJsonToBurner(){
+        //处理完条码后，判断当预期条码数量和当前条码数据中的条码数量是否一致，不一致就发送指令给plc，一致就发送指令给烧录机（burner）
+        if(currentBarcodes.size() == Integer.parseInt(expectedBarcodeCount.get())){
+            // 发送指令给烧录机
+            String sendToBurnerStr=packBarcodesToJson();
+            log("[发送条码数据给烧录机] "+sendToBurnerStr);
+            BurnerService.getInstance().sendBarcodeJsonToBurner(sendToBurnerStr);
+        }
+    }
+
+
+    /**
+     * 处理烧录机信息数据
+     * @param value
+     */
+    protected void burnerProcessBarcodeData(String value) {
+        log("[烧录机接收信息] " + value);
+        //判断信息是否是带前缀的数据：burner.tcp.json.prefix
+        ConfigService configService = ConfigService.getInstance();
+        String jsonPrefix = configService.getConfigValueByKey("burner.tcp.json.prefix");
+        log("烧录指令前缀："+jsonPrefix);
+        if (value.toLowerCase().contains(jsonPrefix)) {
+            // log("[烧录机] 收到数量响应: " + value+";前缀："+jsonPrefix);
+            // 提取条码数量,把value中的jsonPrefix替换为空字符串
+            String barcodes=value.toUpperCase().replaceAll(jsonPrefix.toUpperCase(), "").trim();
+            log("[烧录机] 提取后的字符串: " + barcodes);
+            try {
+                //清空当前页面烧录结果
+                burnResultDataList.clear();
+                barcodes=HexUtils.hexToString(barcodes);
+                saveProgramResult(barcodes);
+                //给PLC发送指令：完成：plc.tcp.complete.command
+                String completeCommand = configService.getConfigValueByKey("plc.tcp.complete.command");
+                log("[PLC]完成指令："+completeCommand);
+                networkService.sendData(completeCommand, TcpServiceEnum.PLC);
+                //给burner发送指令：结束：burner.tcp.complete.command
+                String endCommand = configService.getConfigValueByKey("burner.tcp.complete.command");
+                log("[烧录机]结束指令："+endCommand);
+                networkService.sendData(endCommand, TcpServiceEnum.BURNER);
+            }catch (Exception e) {
+                log("[烧录机] 处理条码数据时出错: " + e.getMessage());
+            }
+        }
+        return;
+    }
+
 
     /**
      * 保存烧录结果到数据库
@@ -1421,39 +1446,7 @@ public class AutoProcessPanel extends BorderPane {
             }
         }
     }
-    /**
-     * 处理烧录机信息数据
-     * @param value
-     */
-    protected void burnerProcessBarcodeData(String value) {
-        log("[烧录机接收信息] " + value);
-        //判断信息是否是带前缀的数据：burner.tcp.json.prefix
-        ConfigService configService = ConfigService.getInstance();
-        String jsonPrefix = configService.getConfigValueByKey("burner.tcp.json.prefix");
-        log("烧录指令前缀："+jsonPrefix);
-        if (value.toLowerCase().contains(jsonPrefix)) {
-            // log("[烧录机] 收到数量响应: " + value+";前缀："+jsonPrefix);
-            // 提取条码数量,把value中的jsonPrefix替换为空字符串
-            String barcodes=value.toUpperCase().replaceAll(jsonPrefix.toUpperCase(), "").trim();
-            log("[烧录机] 提取后的字符串: " + barcodes);
-            try {
-                //清空当前页面烧录结果
-                burnResultDataList.clear();
-                barcodes=HexUtils.hexToString(barcodes);
-                saveProgramResult(barcodes);
-                //给PLC发送指令：完成：plc.tcp.complete.command
-                String completeCommand = configService.getConfigValueByKey("plc.tcp.complete.command");
-                log("[PLC]完成指令："+completeCommand);
-                networkService.sendData(completeCommand, TcpServiceEnum.PLC);
-                //给burner发送指令：结束：burner.tcp.complete.command
-                String endCommand = configService.getConfigValueByKey("burner.tcp.complete.command");
-                log("[烧录机]结束指令："+endCommand);
-                networkService.sendData(endCommand, TcpServiceEnum.BURNER);
-            }catch (Exception e) {
-                log("[烧录机] 处理条码数据时出错: " + e.getMessage());
-            }
-        }
-    }
+
     /**
      * 处理条码数据的封装方法
      * @param barcode 条码内容
@@ -1533,7 +1526,6 @@ public class AutoProcessPanel extends BorderPane {
         log("[流程] 发送开始指令到烧录机: " + startCommand);
 
     }
-    //把当前条码列表打包成json字符串
     /**
      * 把当前条码列表转换为json字符串
      * 需转为：[{"site":"01","code":"4C5A0000DE45"},{"site":"02","code":"4C5A0000DE46"},{"site":"03","code":"4C5A0000
@@ -1541,10 +1533,8 @@ DE47"},{"site":"04","code":"4C5A0000DE48"}]格式。
      * 注意：固定每个条码的site为2个字符，site内容为流水01-12，且必须12个对象。没数据的code传空。
      * @return json字符串
      */
-    
     private String packBarcodesToJson() {
        JSONArray jsonArray = new JSONArray();
-       
        // 创建12个条码对象，site为01-12流水号
        for (int i = 1; i <= 12; i++) {
            JSONObject barcodeObj = new JSONObject();
