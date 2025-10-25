@@ -6,6 +6,7 @@ import com.iot.plc.ui.logs.LogsManagementPanel;
 import com.iot.plc.ui.config.JavaFXConfigPanel;
 import com.iot.plc.ui.AutoProcessPanel;
 import com.iot.plc.service.InitConfigService;
+import com.iot.plc.service.NetworkService;
 import javafx.application.Application;
 import javafx.scene.Scene;
 import javafx.scene.control.Tab;
@@ -18,6 +19,14 @@ public class JavaFXMain extends Application {
 
     @Override
     public void start(Stage primaryStage) {
+        // 添加关闭钩子，确保程序退出时释放资源
+        primaryStage.setOnCloseRequest(event -> {
+            Logger.getInstance().info("程序正在关闭，清理资源...");
+            // 关闭所有网络服务
+            NetworkService.getInstance().shutdown();
+            Logger.getInstance().info("资源清理完成，程序已关闭");
+        });
+        
         // 初始化系统配置和数据库
         InitConfigService.getInstance().initializeSystem();
         Logger.getInstance().info("系统初始化完成");

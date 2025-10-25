@@ -1394,12 +1394,15 @@ public class AutoProcessPanel extends BorderPane {
         log("[流程] 条码数据: " + barcodesStr);
         //然后把barcodesstr进行hex编码
         barcodesStr = HexUtils.bytesToHex(barcodesStr.getBytes());
+        //添加条码前缀：burner.tcp.json.prefix
+        ConfigService configService = ConfigService.getInstance();
+        String jsonPrefix = configService.getConfigValueByKey("burner.tcp.json.prefix");
+        barcodesStr = jsonPrefix + barcodesStr;
         // 通过NetworkService发送指令到烧录机
         NetworkService networkService = NetworkService.getInstance();
         networkService.sendData(barcodesStr, TcpServiceEnum.BURNER);
         log("[流程] 条码数据-Hex: " + barcodesStr);
         //下一步：传烧录机开始指令：burner.tcp.begin.command
-        ConfigService configService = ConfigService.getInstance();
         String startCommand = configService.getConfigValueByKey("burner.tcp.begin.command");
         networkService.sendData(startCommand, TcpServiceEnum.BURNER);
         log("[流程] 发送开始指令到烧录机: " + startCommand);
@@ -1546,8 +1549,12 @@ DE47"},{"site":"04","code":"4C5A0000DE48"}]格式。
      */
     private String packBarcodesToJson() {
        JSONArray jsonArray = new JSONArray();
+       //从配置服务获取burner.tcp.json.size
+       ConfigService configService = ConfigService.getInstance();
+       String jsonSize = configService.getConfigValueByKey("burner.tcp.json.size");
+       int jsonSizeInt = Integer.parseInt(jsonSize);
        // 创建12个条码对象，site为01-12流水号
-       for (int i = 1; i <= 12; i++) {
+       for (int i = 1; i <= jsonSizeInt; i++) {
            JSONObject barcodeObj = new JSONObject();
            // 格式化site为两位数字，如01, 02等
            String site = String.format("%02d", i);

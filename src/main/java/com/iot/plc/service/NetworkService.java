@@ -286,7 +286,10 @@ public class NetworkService {
                 logger.info(logMsg);
                 notifyLogReceived(logMsg);
                 
-                ServerSocket serverSocket = new ServerSocket(config.getPort());
+                // 创建ServerSocket并设置端口重用选项
+                ServerSocket serverSocket = new ServerSocket();
+                serverSocket.setReuseAddress(true); // 设置端口重用
+                serverSocket.bind(new InetSocketAddress(config.getPort()));
                 serviceInstance.setTcpServerSocket(serverSocket);
                 
                 logMsg = "[TCP服务端] " + alias + "TCP服务端启动成功，端口: " + config.getPort();

@@ -136,6 +136,8 @@ public class InitConfigService {
         addDefaultConfig(configService, "burner.tcp.end.command", "1b1b1b1b1b0a1b0a52030d579253ffab4065656d732f5f656e64ff01", "burner-结束指令", "string", false);
         // burner.tcp.json.prefix
         addDefaultConfig(configService, "burner.tcp.json.prefix", "1b1b1b1b1b0a1b0a62021741f1b8ffaa40656d732f5f74657374ff" , "burner-条码json前缀", "string", false);
+        // burner.tcp.json.size
+        addDefaultConfig(configService, "burner.tcp.json.size", "6", "burner-条码大小", "string", false);
 
         // 网络配置面板相关配置项
         // 使用TcpServiceEnum遍历添加，提高扩展性
