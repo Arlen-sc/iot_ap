@@ -25,6 +25,9 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import com.iot.plc.enumx.TcpServiceEnum;
 import java.sql.SQLException;
 import javafx.scene.layout.GridPane;
@@ -62,6 +65,15 @@ import com.iot.plc.util.HexUtils;
 public class AutoProcessPanel extends BorderPane {
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final Logger logger = Logger.getInstance();
+    
+    // 全局状态控制变量，0表示执行，非0表示不执行
+    private int plcCommandStatus = 0;
+    
+    // 定时任务调度器
+    private ScheduledExecutorService scheduler;
+    
+    // 存储上一次执行指令的值
+    private String lastCommandValue = "";
 
     // 服务实例
     private NetworkService networkService;
@@ -327,7 +339,7 @@ public class AutoProcessPanel extends BorderPane {
         simulatePlcCountButton.setOnAction(e -> simulatorEvents.simulatePlcProductCount());
         simulatePlcStartButton.setOnAction(e ->{
             //模拟条码发送给烧录机
-            sendBarcodeJsonToBurner();
+            sendBarcodeToBurner();
         });
         // simulateComDataButton.setOnAction(e -> showComDataInputDialog());
 
@@ -518,9 +530,17 @@ public class AutoProcessPanel extends BorderPane {
                 handleConnectionStatusChanged(connected, serviceType);
             }
 
+            // 实现新版连接数变化通知方法，支持不同服务类型
             @Override
             public void onConnectionCountChanged(int count, TcpServiceEnum serviceType) {
-                handleConnectionCountChanged(count, serviceType);
+                // 在JavaFX应用线程中更新连接数显示
+                Platform.runLater(() -> {
+                    if (serviceType == TcpServiceEnum.BURNER) {
+                        connectionStatus.set(count + "个连接");
+                    } else if (serviceType == TcpServiceEnum.SCANNER) {
+                        scannerConnectionStatus.set(count + "个连接");
+                    }
+                });
             }
 
             // 处理连接状态变化的私有辅助方法
@@ -557,17 +577,7 @@ public class AutoProcessPanel extends BorderPane {
                 });
             }
 
-            // 处理连接数变化的私有辅助方法
-            private void handleConnectionCountChanged(int count, TcpServiceEnum serviceType) {
-                // 在JavaFX应用线程中更新连接数显示
-                Platform.runLater(() -> {
-                    if (serviceType == TcpServiceEnum.BURNER) {
-                        connectionStatus.set(count + "个连接");
-                    } else if (serviceType == TcpServiceEnum.SCANNER) {
-                        scannerConnectionStatus.set(count + "个连接");
-                    }
-                });
-            }
+            // 新版代码已移除旧版方法，仅使用带服务类型的方法
         });
     }
 
@@ -1217,6 +1227,9 @@ public class AutoProcessPanel extends BorderPane {
         currentStatus.set("运行中");
         log("[操作结果] 流程已启动，请扫描条码...");
         log("[流程状态] 当前流程状态：运行中");
+        
+        // 启动定时任务
+        startPlcCommandTask();
     }
 
     /**
@@ -1224,6 +1237,8 @@ public class AutoProcessPanel extends BorderPane {
      */
     private void resetProcess() {
         log("[操作] 用户点击了'重置流程'按钮");
+        // 停止定时任务
+        stopPlcCommandTask();
         // 不设置processStarted为false，保持流程运行状态
         barcodeVerified.set(false);
         waitingForStartCommand.set(false);
@@ -1302,6 +1317,12 @@ public class AutoProcessPanel extends BorderPane {
      * @throws SQLException 数据库操作异常
      */
     protected void addBarcodeData(String barcode) throws SQLException {
+                //判断是否是
+        // 防重逻辑：检查当前条码是否已存在
+        if (currentBarcodes.contains(barcode)) {
+            log("[扫码机] 条码已存在，跳过处理: " + barcode);
+            return;
+        }
         // 创建BarcodeData对象并添加到barcodeDataList
         BarcodeData barcodeData = new BarcodeData(deviceId, barcode, "PLC_PORT");
         //插入数据库
@@ -1328,11 +1349,11 @@ public class AutoProcessPanel extends BorderPane {
     protected void plcProcessData(String value) {
         // 处理PLC开始指令
         // 调用PlcService处理PLC开始指令
-        PlcService.getInstance().doPlcBeginCommand(value);
+        // PlcService.getInstance().doPlcBeginCommand(value);
         
         // 处理PLC数量响应  
-        int qty = PlcService.getInstance().doPlcQtyResponse(value);
-        if(qty > 0){
+        Integer qty = PlcService.getInstance().doPlcQtyResponse(value);
+        if(qty != null){
             expectedBarcodeCount.set(String.valueOf(qty));
             expectedBarcodeCountInput.setText(String.valueOf(qty));
             applyExpectedCount();//应用条码数量。
@@ -1340,36 +1361,50 @@ public class AutoProcessPanel extends BorderPane {
 
         // 处理条码数据//现在此方法值需要处理一个数据：解析条码：
         // 调用PlcService处理条码数据
+        // 严格按顺序处理和添加条码，确保顺序一致性
         List<String> barcodes = PlcService.getInstance().doBarcodeProcess(value);
         if(barcodes != null && !barcodes.isEmpty()){
-            for (String barcode : barcodes) {
+            for (int i = 0; i < barcodes.size(); i++) {
+                String barcode = barcodes.get(i);
                 try {
                     addBarcodeData(barcode);
                 } catch (SQLException e) {
-                    log("[处理条码] 添加条码数据失败: " + e.getMessage());
-                    return;
+                    // 继续处理后续条码，保持顺序完整性
+                    continue;
                 }
             }
             // 发送条码数据给烧录机
-            sendBarcodeJsonToBurner();
+            // sendBarcodeJsonToBurner();
+            sendBarcodeToBurner();
             return;
         }
         
     }
-
-    /**
-     * 发送条码数据给烧录机
+ /**
+     * 发送当前条码列表到烧录机
      */
-    protected void sendBarcodeJsonToBurner(){
+    private void  sendBarcodeToBurner(){
+        log("[流程-] 发送条码列表到烧录机: " );
         //处理完条码后，判断当预期条码数量和当前条码数据中的条码数量是否一致，不一致就发送指令给plc，一致就发送指令给烧录机（burner）
-        if(currentBarcodes.size() == Integer.parseInt(expectedBarcodeCount.get())){
-            // 发送指令给烧录机
-            String sendToBurnerStr=packBarcodesToJson();
-            log("[发送条码数据给烧录机] "+sendToBurnerStr);
-            BurnerService.getInstance().sendBarcodeJsonToBurner(sendToBurnerStr);
+        if(currentBarcodes.size() != Integer.parseInt(expectedBarcodeCount.get())){
+            log("[流程-] 发送条码列表到烧录机: 条码数量不一致，当前条码数量: " + currentBarcodes.size() + "，预期条码数量: " + expectedBarcodeCount.get());
+            return;
         }
-    }
+        String barcodesStr = packBarcodesToJson();
+        log("[流程] 条码数据: " + barcodesStr);
+        //然后把barcodesstr进行hex编码
+        barcodesStr = HexUtils.bytesToHex(barcodesStr.getBytes());
+        // 通过NetworkService发送指令到烧录机
+        NetworkService networkService = NetworkService.getInstance();
+        networkService.sendData(barcodesStr, TcpServiceEnum.BURNER);
+        log("[流程] 条码数据-Hex: " + barcodesStr);
+        //下一步：传烧录机开始指令：burner.tcp.begin.command
+        ConfigService configService = ConfigService.getInstance();
+        String startCommand = configService.getConfigValueByKey("burner.tcp.begin.command");
+        networkService.sendData(startCommand, TcpServiceEnum.BURNER);
+        log("[流程] 发送开始指令到烧录机: " + startCommand);
 
+    }
 
     /**
      * 处理烧录机信息数据
@@ -1462,12 +1497,7 @@ public class AutoProcessPanel extends BorderPane {
             log("[扫码机] 无效的数据");
             return;
         }
-        //判断是否是
-        // 防重逻辑：检查当前条码是否已存在
-        if (currentBarcodes.contains(barcode)) {
-            log("[扫码机] 条码已存在，跳过处理: " + barcode);
-            return;
-        }
+
         addBarcodeData(barcode);
         log("[扫码机] 条码: " + barcode);
         log("[扫码机] 当前条码数量: " + barcodeDataList.size() + ", 预期条码数量: " + expectedBarcodeCount.get());
@@ -1506,26 +1536,7 @@ public class AutoProcessPanel extends BorderPane {
         }
         
     }
-    /**
-     * 发送当前条码列表到烧录机
-     */
-    private void  sendBarcodeToBurner(){
-        log("[流程] 发送条码列表到烧录机: " );
-        String barcodesStr = packBarcodesToJson();
-        log("[流程] 条码数据: " + barcodesStr);
-        //然后把barcodesstr进行hex编码
-        barcodesStr = HexUtils.bytesToHex(barcodesStr.getBytes());
-        // 通过NetworkService发送指令到烧录机
-        NetworkService networkService = NetworkService.getInstance();
-        networkService.sendData(barcodesStr, TcpServiceEnum.BURNER);
-        log("[流程] 条码数据-Hex: " + barcodesStr);
-        //下一步：传烧录机开始指令：burner.tcp.begin.command
-        ConfigService configService = ConfigService.getInstance();
-        String startCommand = configService.getConfigValueByKey("burner.tcp.begin.command");
-        networkService.sendData(startCommand, TcpServiceEnum.BURNER);
-        log("[流程] 发送开始指令到烧录机: " + startCommand);
-
-    }
+   
     /**
      * 把当前条码列表转换为json字符串
      * 需转为：[{"site":"01","code":"4C5A0000DE45"},{"site":"02","code":"4C5A0000DE46"},{"site":"03","code":"4C5A0000
@@ -1571,6 +1582,96 @@ DE47"},{"site":"04","code":"4C5A0000DE48"}]格式。
         } catch (Exception e) {
             log("[错误] 获取PLC条码数失败: " + e.getMessage());
         }
+    }
+    
+    /**
+     * 初始化定时任务调度器
+     */
+    private void initScheduler() {
+        if (scheduler == null || scheduler.isShutdown()) {
+            scheduler = Executors.newScheduledThreadPool(1);
+        }
+    }
+    
+    /**
+     * 启动定时执行PLC指令的任务
+     * 每秒执行一次，当plcCommandStatus=0时执行，否则不执行
+     */
+    private void startPlcCommandTask() {
+        try {
+            // 确保scheduler被初始化
+            initScheduler();
+            
+            // 再次检查scheduler是否为null
+            if (scheduler == null) {
+                log("[定时任务] scheduler初始化失败，无法启动定时任务");
+                return;
+            }
+            
+            // 取消可能存在的任务
+            stopPlcCommandTask();
+            
+            // 确保scheduler在stop后仍然有效
+            initScheduler();
+            
+            // 再次检查scheduler是否为null
+            if (scheduler == null) {
+                log("[定时任务] scheduler重新初始化失败，无法启动定时任务");
+                return;
+            }
+            
+            // 启动定时任务，每3秒执行一次
+            scheduler.scheduleAtFixedRate(() -> {
+                try {
+                    // 检查状态控制变量
+                    if (plcCommandStatus == 0) {
+                        Platform.runLater(() -> {
+                                PlcService.getInstance().sendPlcBeginCommand();
+                        });
+                    }
+                } catch (Exception e) {
+                    log("[定时任务] 执行异常: " + e.getMessage());
+                }
+            }, 0, 3, TimeUnit.SECONDS);
+            
+            log("[定时任务] PLC指令定时任务已启动，每3秒执行一次");
+        } catch (Exception e) {
+            log("[定时任务] 启动PLC指令定时任务失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 停止定时执行PLC指令的任务
+     */
+    private void stopPlcCommandTask() {
+        try {
+            if (scheduler != null && !scheduler.isShutdown()) {
+                scheduler.shutdown();
+                // 设置为null，下次启动时会重新初始化
+                scheduler = null;
+            }
+        } catch (Exception e) {
+            log("[定时任务] 停止任务失败: " + e.getMessage());
+            // 即使发生异常，也将scheduler设置为null，避免下次使用时出现问题
+            scheduler = null;
+        }
+    }
+    
+    /**
+     * 设置PLC命令执行状态
+     * @param status 状态值，0表示执行，非0表示不执行
+     */
+    public void setPlcCommandStatus(int status) {
+        this.plcCommandStatus = status;
+        log("[状态更新] PLC命令执行状态已设置为: " + status);
+    }
+    
+    /**
+     * 获取当前PLC命令执行状态
+     * @return 当前状态值
+     */
+    public int getPlcCommandStatus() {
+        return plcCommandStatus;
     }
     /**
      * 处理手动输入的条码
