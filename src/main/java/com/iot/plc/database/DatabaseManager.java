@@ -123,7 +123,6 @@ public class DatabaseManager {
     }
     
     public static Connection getConnection() throws SQLException {
-        logger.debug("获取数据库连接");
         return DriverManager.getConnection(DB_URL);
     }
     

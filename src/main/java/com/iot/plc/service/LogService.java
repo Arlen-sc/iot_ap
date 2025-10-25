@@ -28,9 +28,9 @@ public class LogService {
      */
     private LogService() {
         this.logListeners = new CopyOnWriteArrayList<>();
-        this.isLoggingEnabled = true;
+        this.isLoggingEnabled = false;
         this.dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-        logger.info("LogService 初始化成功");
+        // 默认关闭日志，不记录初始化日志
     }
 
     /**

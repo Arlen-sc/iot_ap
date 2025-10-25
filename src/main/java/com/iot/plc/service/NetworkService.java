@@ -430,7 +430,7 @@ public class NetworkService {
                 byte[] copyBuffer = Arrays.copyOf(buffer, bytesRead);
                 notifyDataReceived(copyBuffer, config.getServiceType());
                 String receivedData = processReceivedData(copyBuffer, bytesRead, config);
-                logger.info("收到TCP数据: " + receivedData);
+                // logger.info("收到TCP数据: " + receivedData);
                 notifyDataReceived(receivedData, config.getServiceType());
             }
         } catch (IOException e) {
@@ -470,7 +470,6 @@ public class NetworkService {
             String hexStr = HexUtils.bytesToHex(data, length);
             // notifyDataReceived(hexStr, config.getServiceType());
             try {
-                // logger.info("收到TCP数据(HEX): " + hexStr);
                 resultString=HexUtils.hexToString(hexStr, "UTF-8");
             } catch (Exception e) {
                 logger.error("处理HEX数据错误: " + e.getMessage(), e);
@@ -510,20 +509,32 @@ public class NetworkService {
             
             switch (config.getProtocolType()) {
                 case TCP_SERVER:
-                    // TCP服务端需要知道目标客户端
-            logger.warn(serviceType.getDescription() + " TCP服务端不能直接发送数据，需要客户端信息");
-            // 可以在这里添加获取第一个连接的客户端并发送数据的逻辑
-            if (!instance.getConnectedClients().isEmpty()) {
-                Socket clientSocket = instance.getConnectedClients().iterator().next();
-                try {
-                    clientSocket.getOutputStream().write(bytes);
-                    logger.info("已发送TCP数据到" + serviceType.getDescription() + "的第一个连接客户端: " + data);
-                } catch (IOException e) {
-                    logger.warn("发送数据到TCP客户端失败: " + e.getMessage());
-                }
-            }
+                    // 向所有连接的客户端广播数据
+                    logger.info("TCP_SERVER向" + serviceType.getDescription() + "的所有连接客户端广播数据: " + data);
+                    if (!instance.getConnectedClients().isEmpty()) {
+                        int successCount = 0;
+                        int failCount = 0;
+                        // 遍历所有连接的客户端
+                        for (Socket clientSocket : instance.getConnectedClients()) {
+                            try {
+                                if (clientSocket != null && !clientSocket.isClosed()) {
+                                    clientSocket.getOutputStream().write(bytes);
+                                    successCount++;
+                                    logger.debug("成功发送数据到客户端: " + clientSocket.getInetAddress().getHostAddress() + ":" + clientSocket.getPort());
+                                }
+                            } catch (IOException e) {
+                                failCount++;
+                                logger.warn("发送数据到客户端" + clientSocket.getInetAddress().getHostAddress() + ":" + clientSocket.getPort() + "失败: " + e.getMessage());
+                                // 可以考虑从connectedClients中移除失败的连接
+                            }
+                        }
+                        logger.info("已向" + serviceType.getDescription() + "的" + successCount + "个客户端成功发送数据，" + failCount + "个客户端发送失败");
+                    } else {
+                        logger.warn(serviceType.getDescription() + "没有连接的客户端，无法广播数据");
+                    }
             break;
                 case TCP_CLIENT:
+                    logger.info("TCP_CLIENT发送TCP数据到" + serviceType.getDescription() + ": " + data);
                     if (instance.getTcpClientSocket() != null && instance.getTcpClientSocket().isConnected()) {
                         instance.getTcpClientSocket().getOutputStream().write(bytes);
                         logger.info("已发送TCP数据到" + serviceType.getDescription() + ": " + data);
@@ -532,6 +543,8 @@ public class NetworkService {
                     }
                     break;
                 case UDP:
+                    logger.info("UDP发送数据到" + serviceType.getDescription() + ": " + data);
+
                     if (instance.getUdpSocket() != null && !instance.getUdpSocket().isClosed()) {
                         InetAddress address = InetAddress.getByName(config.getHost());
                         DatagramPacket packet = new DatagramPacket(bytes, bytes.length, address, config.getPort());
@@ -627,32 +640,33 @@ public class NetworkService {
     }
     
     /**
-     * 通知连接数变化
-     */
-    private void notifyConnectionCountChanged(int count, TcpServiceEnum serviceType) {
-        // 通知旧的监听器（调用旧方法，保持兼容性）
-        if (listener != null) {
-            try {
-                listener.onConnectionCountChanged(count);
-            } catch (Exception e) {
-                logger.warn("通知连接数变化失败: " + e.getMessage());
-            }
-        }
-        
-        // 通知所有监听器
-        for (NetworkListener networkListener : listeners) {
-            try {
-                if (networkListener != listener) { // 避免重复通知
-                    networkListener.onConnectionCountChanged(count, serviceType);
-                }
-            } catch (Exception e) {
-                logger.warn("通知连接数变化失败: " + e.getMessage());
-            }
-        }
-    }
-    /* 
-         * 清理资源
-     */
+      * 通知连接数变化
+      */
+     private void notifyConnectionCountChanged(int count, TcpServiceEnum serviceType) {
+         // 通知旧的监听器（调用旧方法，保持兼容性）
+         if (listener != null) {
+             try {
+                 listener.onConnectionCountChanged(count);
+             } catch (Exception e) {
+                 logger.warn("通知旧监听器连接数变化失败: " + e.getMessage());
+             }
+         }
+         
+         // 通知所有新的监听器（调用带服务类型的方法）
+         for (NetworkListener networkListener : listeners) {
+             try {
+                 if (networkListener != listener) { // 避免重复通知
+                     networkListener.onConnectionCountChanged(count, serviceType);
+                 }
+             } catch (Exception e) {
+                 logger.warn("通知监听器连接数变化失败: " + e.getMessage());
+             }
+         }
+     }
+
+     /**
+      * 清理资源
+      */
     public void shutdown() {
         stopAllServices();
         executorService.shutdown();

@@ -252,6 +252,8 @@ public class JavaFXConfigPanel extends JavaFXBasePanel {
                     configItem.setConfigValue(valueField.getText().trim());
                     configItem.setDescription(descField.getText().trim());
                     DatabaseManager.saveConfigItem(configItem);
+                    // 刷新配置缓存，确保其他模块能立即读取最新配置
+                    com.iot.plc.service.ConfigService.getInstance().refreshCache();
                     loadData();
                     showInfoDialog("成功", "配置项更新成功");
                 } catch (SQLException e) {

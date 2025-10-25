@@ -48,7 +48,16 @@ public class PlcService {
         }
         return null;
     }
-    
+    public void sendPlcBeginCommand(){
+        ConfigService configService = ConfigService.getInstance();
+        //获取开始指令
+        String beginCommand = configService.getConfigValueByKey("plc.tcp.begin.command");
+        //发送开始指令
+        NetworkService networkService = NetworkService.getInstance();
+        networkService.sendData(beginCommand, TcpServiceEnum.PLC);
+        // log("[PLC] 已发送开始指令: " + beginCommand);
+    }
+
     /**
      * 处理PLC开始指令
      * 1.判断信息是否是：plc.tcp.begin.command配置的接收指令
@@ -77,7 +86,7 @@ public class PlcService {
      * 2.如果是，提取条码数量，更新到配置服务，应用条码数量，发送next指令
      * @param value
      */
-    public int doPlcQtyResponse(String value){
+    public Integer doPlcQtyResponse(String value){
         ConfigService configService = ConfigService.getInstance();
         String receiveCommand = configService.getConfigValueByKey("plc.qty.query.response");
         if (value.contains(receiveCommand)) {
@@ -97,8 +106,7 @@ public class PlcService {
             // log("[PLC] 已发送next指令: " + nextCommand);
             // return;
         }else{
-            log("[PLC] 收到非数量响应: " + value);
-            return 0;
+            return null;
         }
     }
 }

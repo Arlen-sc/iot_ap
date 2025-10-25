@@ -20,7 +20,7 @@ import java.io.IOException;
  */
 public class JavaFXLogPanel extends JavaFXBasePanel {
     private TextArea logTextArea;
-    private boolean isLogEnabled = true;
+    private boolean isLogEnabled = false;
     private LogHandler logHandler;
     private Logger logger;
 
@@ -76,8 +76,7 @@ public class JavaFXLogPanel extends JavaFXBasePanel {
     @Override
     protected void loadData() {
         // 初始化时可以加载一些欢迎信息
-        appendLog("系统日志面板已初始化");
-        appendLog("当前日志状态: 已开启");
+        // 注意：因为默认关闭日志，所以这些信息不会显示在日志区域
     }
 
     @Override
